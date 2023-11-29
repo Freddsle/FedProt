@@ -1,0 +1,30 @@
+fedprot_config:
+  local_dataset:
+    intensities: intensities.tsv
+    counts: counts.tsv
+    design: design.tsv
+    detail:
+      sep: '\t'
+      label: "Condition"
+
+#  centralized:
+#    data_dir: sample_data/c1
+
+  simulation:
+    clients: lab_A, lab_B, lab_C, lab_D, lab_E
+    dir: ./data
+    clients_dir: ab_A,lab_B,lab_C,lab_D,lab_E
+
+  logic:
+    mode: "file"
+    dir: "."    
+    max_na_rate: 0.8
+    # group1: "Pyr"
+    # group2: "Gly"
+
+  result:
+    table: "DPE.csv"
+    detail:
+      sep: ','
+
+  use_smpc: False
