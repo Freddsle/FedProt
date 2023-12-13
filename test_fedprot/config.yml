@@ -1,0 +1,14 @@
+simulation:
+    clients: lab_A, lab_B
+
+intensities: intensities.tsv
+counts: counts.tsv
+design: design.tsv
+sep: '\t'
+label: "Condition"
+
+max_na_rate: 0.8
+# group1: "Pyr"
+# group2: "Gly"
+
+result_table: "DPE.csv"

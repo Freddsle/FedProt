@@ -11,9 +11,9 @@ fedprot_config:
 #    data_dir: sample_data/c1
 
   simulation:
-    clients: lab_A, lab_B, lab_C, lab_D, lab_E
-    dir: ./data
-    clients_dir: ab_A,lab_B,lab_C,lab_D,lab_E
+    clients: lab_A, lab_B
+    dir: .
+    clients_dir: lab_A,lab_B
 
   logic:
     mode: "file"

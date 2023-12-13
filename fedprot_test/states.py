@@ -82,11 +82,10 @@ def generate_federated_states(app_four: "AppFour", featurecloud_app: None or app
             if data_to_send:
                 self.send_data_to_coordinator(data_to_send,
                                               use_smpc=app_four.config["use_smpc"])
-            if app_four.last_round:
+            if app_four.last_round or not self.is_coordinator:
                 return "Write_Results"
             if self.is_coordinator:
                 return "Global_Aggregation"
-            return "Local_Training"
 
     @app_state('Global_Aggregation', app_instance=featurecloud_app)
     class GlobalAggregation(AppState):
@@ -100,8 +99,12 @@ def generate_federated_states(app_four: "AppFour", featurecloud_app: None or app
                 local_data = self.aggregate_data()
             else:
                 local_data = self.gather_data()
+
             data_to_broadcast = app_four.global_aggregation(local_parameters=local_data)
+
+            self.log("Data to broadcast...")
             print(data_to_broadcast)
+
             self.broadcast_data(data_to_broadcast)
             return 'Local_Training'
 

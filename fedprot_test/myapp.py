@@ -24,7 +24,7 @@ Tips:
 
 import utils
 
-APP_NAME = "fc_example_config"
+APP_NAME = "fedprot_config"
 
 
 class MyAppFour(utils.AppFour):

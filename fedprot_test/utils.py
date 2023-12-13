@@ -63,7 +63,7 @@ def read_config():
     '''
     file_path = CONFIG_FILE
     if not is_native():
-        file_path = f"/mnt/input/{CONFIG_FILE}"
+        file_path = f"app/{CONFIG_FILE}"
     return bios.read(file_path)
 
 
@@ -178,6 +178,14 @@ class AppFour(abc.ABC):
             shutil.rmtree(self.output_root_dir)
         os.makedirs(self.output_root_dir)
 
+        if 'logic' in self.config:
+            self.mode = self.config['logic']['mode']
+            self.max_na_rate = self.config['logic']['max_na_rate']
+
+        self.log(f"Input directory: {self.input_root_dir},\n",
+                 f"Output directory: {self.output_root_dir}\n",
+                 f"Mode: {self.mode}, Max NA rate: {self.max_na_rate}")
+
         self.last_round = False
 
     @abc.abstractmethod
@@ -189,6 +197,7 @@ class AppFour(abc.ABC):
         data_to_broadcast: list
 #             Values or messages from coordinator to all client
         """
+        pass
 
     @abc.abstractmethod
     def local_training(self, global_parameters: list):
@@ -202,6 +211,7 @@ class AppFour(abc.ABC):
         -------
 
         """
+        pass
 
     @abc.abstractmethod
     def global_aggregation(self, local_parameters: list):
@@ -215,6 +225,7 @@ class AppFour(abc.ABC):
         -------
 
         """
+        pass
 
     @abc.abstractmethod
     def write_results(self):
@@ -224,6 +235,7 @@ class AppFour(abc.ABC):
         -------
 
         """
+        pass
 
     @abc.abstractmethod
     def centralized(self):
