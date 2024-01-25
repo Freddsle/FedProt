@@ -42,6 +42,9 @@ class Server:
         self.stored_features = []
 
         # attributes for fedDEqMS filtering
+        self.prot_na_table = pd.DataFrame()
+        self.samples_per_target = None
+
         # count
         self.pep_counts_table = None
 
@@ -107,20 +110,36 @@ class Server:
     def compute_F(self, f):
         F = np.exp(np.mean(np.log(f)))
         return F
-    
 
-    def update_prot_names(self, client_cohort_name, client_prot_names):
+    def create_na_df(self, na_count_in_variable, samples_per_target):
+        """
+        Create the df with the number of NA value per target class
+        """
+        if self.prot_na_table.empty:
+            self.prot_na_table = na_count_in_variable
+            self.samples_per_target = samples_per_target
+
+        else:
+            # if already exisct - uodate df and dict
+            for key in self.samples_per_target:
+                self.samples_per_target[key] = self.samples_per_target[key] + samples_per_target.get(key)
+            self.prot_na_table = self.prot_na_table.add(na_count_in_variable)
+
+    def update_prot_names(self, min_f):
         """
         Updates shared protein list using data from the clients after filtering
         """
-        # check if client is joined
-        if client_cohort_name not in self.client_names:
-            logging.error(f"Client {client_cohort_name} is not joined.")
-            raise Exception(f"Client {client_cohort_name} is not joined.")
+
+        #caclulate the percentage of NA values per target class
+        self.prot_na_table = self.prot_na_table.loc[:, self.samples_per_target.keys()]
+        samples_series = pd.Series(self.samples_per_target)
+        na_perc = self.prot_na_table.div(samples_series, axis=1)
+
+        keep_proteins = na_perc[na_perc.apply(lambda row: all(row < min_f), axis=1)].index.values
 
         # updated shared protein list
-        self.stored_features = sorted(list(set(self.stored_features) & set(client_prot_names)))
-        return True
+        self.stored_features = sorted(list(set(keep_proteins)))
+        return self.stored_features
 
     ###### fedLmFit #####
     def compute_beta_and_beta_stdev(self, XtX_list, XtY_list):

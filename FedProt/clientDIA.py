@@ -339,14 +339,20 @@ class Client:
             return not_detected_in_tmt
 
         else:
-            na_fractions_in_variable = pd.DataFrame(index=self.intensities.index.values, columns=self.variables)
+            na_count_in_variable = pd.DataFrame(index=self.intensities.index.values, columns=self.variables)
+            samples_per_class = {}
+
             for variable in self.variables:
                 samples = design.loc[design[variable] == 1, :].index.values
                 tmp_intensities = intensities.loc[:, samples]
-                na_fraction = tmp_intensities.isna().sum(axis=1) * 1.0 / len(samples)
-                na_fractions_in_variable[variable] = na_fraction
+                # na_fraction = tmp_intensities.isna().sum(axis=1) * 1.0 / len(samples)
+                na_count = tmp_intensities.isna().sum(axis=1)
+                na_count_in_variable[variable] = na_count
 
-            return na_fractions_in_variable
+                # add the number of samples per class
+                samples_per_class[variable] = len(samples)
+
+            return na_count_in_variable, samples_per_class
 
     def apply_filters(self, min_f=0.5, remove_single_peptide_prots=False, sample_type="sample"):
         if remove_single_peptide_prots:
@@ -370,14 +376,11 @@ class Client:
             return self.prot_names
         
         else:           
-            na_fractions_in_variable = self.is_all_na()
-            mask = (na_fractions_in_variable <= min_f).all(axis=1)
-            passed_prots = na_fractions_in_variable.index[mask].tolist()
+            na_count_in_variable, samples_per_class = self.is_all_na(sample_type)
             logging.info(
-                f"Client {self.cohort_name}:\tProtein groups detected in less than {min_f} of each target class will be excluded: {self.counts.shape[0] - len(passed_prots)}"
-            )            
-        
-        return passed_prots
+                f"Client {self.cohort_name}:\tProtein groups detected in less than {min_f} of each target class will be excluded:"
+            )    
+            return na_count_in_variable, samples_per_class
 
     def update_prot_names(self, passed_prots=None):
         if passed_prots is None:
