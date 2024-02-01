@@ -1,14 +1,15 @@
-simulation:
-    clients: lab_A, lab_B
+fedprot:
+  counts: counts.tsv
+  design: design.tsv
+  intensities: intensities.tsv
+  sep: '\t'
+  
+  use_smpc: false
+  
+  max_na_rate: 0.8
+    # label: "Condition"
+  target_classes: ["Pyr", "Glu"]
+  covariates: []
 
-intensities: intensities.tsv
-counts: counts.tsv
-design: design.tsv
-sep: '\t'
-label: "Condition"
-
-max_na_rate: 0.8
-# group1: "Pyr"
-# group2: "Gly"
-
-result_table: "DPE.csv"
+  result_table: "DPE.csv"
+  

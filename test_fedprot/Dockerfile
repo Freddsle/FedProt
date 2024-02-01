@@ -1,7 +1,9 @@
 FROM python:3.8-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential gcc supervisor nginx && \
+    apt-get install -y --no-install-recommends build-essential gcc supervisor nginx \
+    r-base r-base-dev liblzma-dev libbz2-dev libicu-dev libpcre2-dev \
+    libcurl4-openssl-dev libssl-dev libxml2-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
