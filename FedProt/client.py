@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np
-import sys
 import logging
-from scipy import linalg
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S"
@@ -19,10 +17,9 @@ class Client:
         self,
         cohort_name,
         intensities_file_path,
-        count_file_path,
+        count_file_path,    
         annotation_file_path,
         experiment_type=EXPERIMENT_TYPE,
-        # count_pep_file_path=None,
         log_transformed=False,
     ):
         self.experiment_type = experiment_type
@@ -396,18 +393,13 @@ class Client:
 
         logging.info(f'Samples in {self.cohort_name} data: {len(self.sample_names)}, protein groups: {len(self.prot_names)}')
 
+
     def prepare_for_limma(self, stored_features):
         # remove unnecessary columns from the design matrix
         if self.experiment_type == EXPERIMENT_TYPE:
             self.design = self.design.loc[self.design[SAMPLE_TYPE] == SAMPLE_TYPE, :]
             self.design = self.design.drop(columns=[TMT_PLEX, SAMPLE_TYPE])
         else:
-        #    self.design = self.design.drop(??????)
-            # add missing rows
-            #for prot in stored_features:
-            #    if prot not in self.prot_names:
-            #        self.intensities.loc[prot] = np.nan
-            # update protein names
             self.prot_names = stored_features
     
         self.sample_names = self.design.index.values
@@ -454,9 +446,6 @@ class Client:
             y = y[ndxs]
             self.mu[i, ndxs] = x @ beta[i, :]  # fitted Y
             self.SSE[i] = np.sum((y - self.mu[i, ndxs]) ** 2)  # local SSE
-        # print("mu:",self.mu.shape)
-        # Q,R = np.linalg.qr(X)
-        # self.cov_coef = R.T @ R
         self.cov_coef = X.T @ X
         return self.SSE, self.cov_coef
 
@@ -467,124 +456,7 @@ class Client:
 
     def sum_intensities(self):
         return self.intensities.sum(axis=1)
-
-    ##### for Federated median #########
-    def get_local_median_lb_ub(self):
-        """lower and upper bound median of raw counts"""
-        lb = self.counts.min(axis=1)
-        ub = self.counts.max(axis=1)
-        sigma = self.counts.std(axis=1)
-        return lb - sigma, ub + sigma
-
-    def get_n_le_gt(self, m):
-        # how many values are below m (row-wise)
-        df = self.counts.loc[m.index.values, :]
-        le = df[df.apply(lambda col: col <= m)].T.count()
-        gt = df[df.apply(lambda col: col > m)].T.count()
-        le_gt = pd.concat([le, gt], axis=1)
-        le_gt.columns = ["le", "gt"]
-        return le_gt
-
-    def find_max_of_lesser(self, m):
-        df = self.counts.loc[m.index.values, :]
-        return df[df.apply(lambda col: col <= m)].max(axis=1)
-
-    def find_min_of_greater(self, m):
-        df = self.counts.loc[m.index.values, :]
-        return df[df.apply(lambda col: col > m)].min(axis=1)
-
-    ### TMM normalization
-    def get_libsizes(self):
-        return self.lib_sizes
-
-    """
-    def get_avg_profile(self):
-        return self.counts.mean(axis=1)
     
-    def calc_TMM_factor(self,x,ref,logratioTrim=0.3, sumTrim=0.05, doWeighting=True, Acutoff=-1e10):
-        x = 1.0*x # profile to be transformed 
-        ref = 1.0*ref # reference profile
-        # lib. sizes
-        l_x = np.sum(x)
-        l_ref = np.sum(ref)
-
-        logR = (x/l_x)/(ref/l_ref) # log ratio of expression, accounting for library size
-        absE = (x/l_x) * (ref/l_ref) # absolute expression
-        v = (l_x-x)/l_x/x + (l_ref-ref)/l_ref/ref # estimated asymptotic variance
-
-        df = pd.concat([logR,absE,v],axis=1)
-        df.columns = ["logR","absE","v"]
-        df["logR"] = df["logR"].apply(np.log2)
-        df["absE"] = df["absE"].apply(np.log2)/2
-        # remove all genes with nans and infs 
-        df = df.dropna()
-        df = df.loc[~np.isinf(df).any(axis=1),:]
-        # remove all genes where absE > Acutoff
-        df = df.loc[df["absE"] > Acutoff]
-
-        if np.max(np.abs(df["logR"].values)) < 1e-6:
-            return 1
-
-        # taken from the original mean() function
-        n = df.shape[0]
-        loL = np.floor(n * logratioTrim) + 1
-        hiL = n + 1.0 - loL
-        loS = np.floor(n * sumTrim) + 1
-        hiS = n + 1 - loS
-        #print(loL,hiL,loS,hiS)
-
-        # non-integer values when there are a lot of ties
-        df_ranks = df[["logR","absE"]].rank() 
-        df_ranks = df_ranks.loc[df_ranks["logR"]>=loL]
-        df_ranks = df_ranks.loc[df_ranks["logR"]<=hiL]
-        df_ranks = df_ranks.loc[df_ranks["absE"]>=loS]
-        df_ranks = df_ranks.loc[df_ranks["absE"]<=hiS]
-        df = df.loc[df_ranks.index,:]
-
-        #keep = (df["logR"].rank()>=loL & np.rank(df["logR"])<=hiL) & (np.rank(df["absE"])>=loS & rank(absE)<=hiS)
-
-        if doWeighting:
-            f = np.sum(logR/v) / np.sum(1.0/v)
-        else:
-            f = np.mean(logR)
-
-        return 2**f
-    
-    def compute_TMM_factors(self, ref):
-        norm_factors = []
-        for s in self.counts.columns.values:
-            x = self.counts[s]
-            f = self.calc_TMM_factor(x,ref,logratioTrim=0.3, sumTrim=0.05, doWeighting=True, Acutoff=-1e10)
-            norm_factors.append(f)
-        self.unscaled_f  =  np.array(norm_factors)
-    """
-    ####################################
-    ##### filterByExprs ####
-    ####################################
-    # we need not min, but sum of unique counts
-    # here is solution for min:
-    # def count_samples_in_groups(self, variables):
-    #     design = self.design.loc[:, variables]
-    #     return design.sum(axis=0)
-
-    # def get_total_counts_per_gene(self):
-    #     return self.counts.sum(axis=1)
-
-    # different DEqMS filter was implemented earlier
-    # def count_samples_passing_CPMcutoff(self, CPM_cutoff):
-    #     self.compute_CPM()
-    #     # keep genes where at least 'min_sample_size' samples pass CPM cutoff
-    #     n_samples_passing_CPMcutoff = self.CPM[self.CPM >= CPM_cutoff].count(axis=1)
-    #     return n_samples_passing_CPMcutoff  # per gene
-
-    #     # calculates Y from raw counts
-
-    # def compute_CPM(self):
-    #     """Calculates normalized CPM from raw counts."""
-    #     # self.CPM = self.counts.applymap(lambda x:x)
-    #     self.lib_sizes = self.counts.sum(axis=0)
-    #     self.CPM = self.counts / (self.lib_sizes * self.norm_factors + 1) * 10**6
-
     # #### DEqMS #####
     def get_min_count(self):
         return self.counts.min(axis=1)

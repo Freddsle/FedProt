@@ -1,0 +1,8 @@
+featurecloud
+
+bios
+pandas
+numpy
+scipy
+rpy2
+statsmodels
