@@ -1,8 +1,14 @@
 featurecloud
 
-bios
 pandas
 numpy
 scipy
 rpy2
 statsmodels
+
+bottle
+jsonpickle
+joblib
+bios
+pydot
+pyyaml

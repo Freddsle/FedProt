@@ -1,7 +1,0 @@
-featurecloud
-
-bios
-pandas
-numpy
-scipy
-rpy2

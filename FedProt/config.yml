@@ -1,12 +1,14 @@
 fedprot:
-  counts: counts.tsv
+  counts: protein_counts.tsv
   design: design.tsv
-  intensities: intensities.tsv
+  intensities: protein_groups_matrix.tsv
   sep: '\t'
   
-  use_smpc: false
+  use_smpc: true
   
   max_na_rate: 0.8
+  log_transformed: false
+
     # label: "Condition"
   target_classes: ["Pyr", "Glu"]
   covariates: []

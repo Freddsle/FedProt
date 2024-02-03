@@ -12,13 +12,14 @@ from client import Client
 import utils
 
 CONFIG_FILE = "config.yml"
+
 APP_DIR = "/app"
+
 MOUNT_DIR = "/mnt/input"
 OUTPUT_DIR = "/mnt/output"
-EXPERIMENT_TYPE = 'DIA'
-LOG_TRANSFORMED = False
+
 REMOVE_SINGLE_PEPTIDE_PROT = False
-USE_SMPC = True
+EXPERIMENT_TYPE = 'DIA'
 
 
 @app_state(name='initial', role=Role.BOTH)
@@ -31,7 +32,7 @@ class InitialState(AppState):
         # read config
         self.read_config()
 
-        if USE_SMPC:
+        if self.load('use_smpc'):
             self.configure_smpc()
         # defining the client
         cohort_name = self.id
@@ -43,7 +44,7 @@ class InitialState(AppState):
             count_file_path = os.path.join(MOUNT_DIR, self.load('counts_name')),
             annotation_file_path = os.path.join(MOUNT_DIR, self.load('design_name')),
             experiment_type = EXPERIMENT_TYPE,
-            log_transformed = LOG_TRANSFORMED
+            log_transformed = self.load('log_transformed')
         ) 
         self.log(f"Data read! {client.intensities.shape[1]} samples, {client.intensities.shape[0]} proteins")
 
@@ -64,16 +65,21 @@ class InitialState(AppState):
         
     def read_config(self):
         self.log("Reading config...")
-        config = bios.read(os.path.join(APP_DIR, CONFIG_FILE))
+        config = bios.read(os.path.join(MOUNT_DIR, CONFIG_FILE))
         config = config["fedprot"]
             
         self.store(key='intensities_name', value=config['intensities'])
         self.store(key='counts_name', value=config['counts'])
         self.store(key='design_name', value=config['design'])
         self.store(key='sep', value=config['sep'])
+
         self.store(key='target_classes', value=config['target_classes'])
         self.store(key='covariates', value=config['covariates'])
+
         self.store(key='max_na_rate', value=config['max_na_rate'])
+        self.store(key='use_smpc', value=config['use_smpc'])
+        self.store(key='log_transformed', value=config['log_transformed'])
+        
         self.store(key='result_table', value=config['result_table'])
         
 
@@ -148,7 +154,7 @@ class NACountState(AppState):
                                                                        remove_single_peptide_prots=REMOVE_SINGLE_PEPTIDE_PROT)
         self.send_data_to_coordinator([na_count_in_variable.to_dict(orient='index'), samples_per_class], 
                                       send_to_self=True, 
-                                      use_smpc=USE_SMPC)        
+                                      use_smpc=self.load('use_smpc'))        
         if self.is_coordinator:
             self.log(f"Transition to creation of list of proteins passed NA filter ({round(self.load('max_na_rate') * 100, 0)}%)...")
             return 'prot_na_filtering'
@@ -164,7 +170,7 @@ class NAFilterState(AppState):
     def run(self):
         self.log("Start NA filtering...")
         self.log(f"Number of proteins before NA filtering: {len(self.load('common_proteins'))}")
-        list_of_na_counts_tuples = self.gather_data(is_json=False, use_smpc=USE_SMPC)
+        list_of_na_counts_tuples = self.gather_data(is_json=False, use_smpc=self.load('use_smpc'))
         
 
         # merge na counts
@@ -218,7 +224,7 @@ class ComputeXtState(AppState):
 
         self.send_data_to_coordinator([XtX, XtY],
                                     send_to_self=True,
-                                    use_smpc=USE_SMPC,
+                                    use_smpc=self.load('use_smpc'),
                                     )
         
         if self.is_coordinator:
@@ -237,7 +243,7 @@ class ComputeBetaState(AppState):
         
     def run(self):
         self.log("Start computation of beta and beta stdev...")
-        list_of_xt_lists = self.gather_data(use_smpc=USE_SMPC)
+        list_of_xt_lists = self.gather_data(use_smpc=self.load('use_smpc'))
 
         self.log("XtX and XtY are received, computing beta and beta stdev...")
 
@@ -256,7 +262,7 @@ class ComputeBetaState(AppState):
         XtX_list = list()
         XtY_list = list()
 
-        if not USE_SMPC:
+        if not self.load('use_smpc'):
             # non-smpc case, need to aggregate            
             for pair in list_of_xt_lists:
                 XtX_list.append(pair[0])
@@ -306,7 +312,7 @@ class ComputeSSEState(AppState):
         self.log("SSE and cov_coef are computed, sending to coordinator...")
         self.send_data_to_coordinator([SSE, cov_coef, intensities_sum, n_measurements],
                                         send_to_self=True,
-                                        use_smpc=USE_SMPC)
+                                        use_smpc=self.load('use_smpc'))
         
         if self.is_coordinator:
             self.log("Transition to aggregation of SSE...")
@@ -323,7 +329,7 @@ class AggregateSSEState(AppState):
 
     def run(self):
         self.log("Start aggregation of SSE...")
-        list_of_sse_cov_coef = self.gather_data(use_smpc=USE_SMPC)
+        list_of_sse_cov_coef = self.gather_data(use_smpc=self.load('use_smpc'))
 
         k = len(self.load('variables'))
         n = len(self.load('stored_features'))
@@ -333,7 +339,7 @@ class AggregateSSEState(AppState):
         n_measurements = np.zeros(n)
         Amean = np.zeros(n)
 
-        if not USE_SMPC:
+        if not self.load('use_smpc'):
             # non-smpc case, need to aggregate
             SSE_list = []
             cov_coef_list = []
@@ -515,7 +521,7 @@ class GetCountsState(AppState):
         client = self.load('client')
         counts = client.get_min_count()
         self.log("Counts are computed, sending to coordinator...")
-        self.send_data_to_coordinator(counts.to_dict(), send_to_self=True, use_smpc=USE_SMPC)
+        self.send_data_to_coordinator(counts.to_dict(), send_to_self=True, use_smpc=self.load('use_smpc'))
         
         if self.is_coordinator:
             self.log("Transition to aggregation of counts...")
@@ -532,10 +538,10 @@ class AggregateCountsState(AppState):
 
     def run(self):
         self.log("Start aggregation of counts...")
-        list_of_counts = self.gather_data(use_smpc=USE_SMPC)
+        list_of_counts = self.gather_data(use_smpc=self.load('use_smpc'))
         min_counts = list()
 
-        if not USE_SMPC:
+        if not self.load('use_smpc'):
             # non-smpc case, need to aggregate            
             for local_counts in list_of_counts:
                 min_counts.append(pd.DataFrame.from_dict(local_counts, orient='index'))
