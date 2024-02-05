@@ -10,7 +10,7 @@ fedprot:
   log_transformed: false
 
     # label: "Condition"
-  target_classes: ["Pyr", "Glu"]
+  target_classes: ["Glu", "Pyr"]
   covariates: []
 
   result_table: "DPE.csv"

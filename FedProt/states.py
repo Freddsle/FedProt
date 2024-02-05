@@ -94,7 +94,13 @@ class CommonProteinsState(AppState):
         self.log("[common_proteins] Gathering proteins lists from all clients")
         list_of_features_lists = self.gather_data(is_json=False)
         self.log("[common_proteins] Gathering done!")
-        
+
+        # move the coodinator cohort name to the 0 place in the list of self.clients
+        cohort_name = self.id
+        client_list = [cohort_name] + [client for client in self.clients if client != cohort_name]
+        self.store(key='client_list', value=client_list)
+        self.log(f'List of clients: {client_list}')
+
         prot_names = list()
         for features_list in list_of_features_lists:
             if len(prot_names) == 0:
@@ -113,7 +119,7 @@ class CommonProteinsState(AppState):
         self.store(key='variables', value=variables)
 
         self.log("Transition to validation ...")
-        self.broadcast_data((prot_names, variables), send_to_self=True, memo="commonProteins")
+        self.broadcast_data((client_list, prot_names, variables), send_to_self=True, memo="commonProteins")
         return 'validation'
 
 
@@ -125,13 +131,12 @@ class ValidationState(AppState):
     def run(self):
         self.log("Start validation...")
         # get list of common proteins from coordinator
-        stored_features, variables = self.await_data(n=1, is_json=False, memo="commonProteins")
-        
+        client_list, stored_features, variables = self.await_data(n=1, is_json=False, memo="commonProteins")
         # load client data
         client = self.load('client')
         client.validate_inputs(stored_features, variables)
         # add cohort effects to design
-        client.add_cohort_effects_to_design(self.clients[1:])
+        client.add_cohort_effects_to_design(client_list[1:])
 
         self.log(f"Samples in {client.cohort_name} data: {len(client.sample_names)}")        
         self.log(f"Protein groups in {client.cohort_name} data:  {len(client.prot_names)}")
@@ -171,7 +176,6 @@ class NAFilterState(AppState):
         self.log("Start NA filtering...")
         self.log(f"Number of proteins before NA filtering: {len(self.load('common_proteins'))}")
         list_of_na_counts_tuples = self.gather_data(is_json=False, use_smpc=self.load('use_smpc'))
-        
 
         # merge na counts
         samples_per_target = dict()
@@ -194,7 +198,8 @@ class NAFilterState(AppState):
         na_perc = prot_na_table.div(samples_series, axis=1)
 
         keep_proteins = na_perc[na_perc.apply(lambda row: all(row < self.load('max_na_rate')), axis=1)].index.values
-
+        # sort keep_proteins
+        keep_proteins = sorted(keep_proteins)
         self.log(f"Number of proteins after NA filtering: {len(keep_proteins)}")
         self.store(key='stored_features', value=keep_proteins)
         self.broadcast_data(keep_proteins, send_to_self=True, memo="KeepProteins")
@@ -226,7 +231,8 @@ class ComputeXtState(AppState):
                                     send_to_self=True,
                                     use_smpc=self.load('use_smpc'),
                                     )
-        
+        self.log(f'Design colnames: {client.design.columns.values}')
+
         if self.is_coordinator:
             self.store(key='variables', value=client.design.columns.values)
             self.log("Transition to computing beta...")
@@ -257,8 +263,6 @@ class ComputeBetaState(AppState):
         self.log(f"Size for computing global beta and beta stdev, k = {k}, n = {n}...")
     
         # non-smpc case, need to aggregate
-        
-        self.log(f"Size of list of XtX and XtY lists: {len(list_of_xt_lists)}")
         XtX_list = list()
         XtY_list = list()
 
@@ -267,7 +271,7 @@ class ComputeBetaState(AppState):
             for pair in list_of_xt_lists:
                 XtX_list.append(pair[0])
                 XtY_list.append(pair[1])
-            for i in range(0, len(self.clients)):
+            for i in range(0, len(self.load('client_list'))):
                 XtX_glob += XtX_list[i]
                 XtY_glob += XtY_list[i]   
         else:
@@ -352,7 +356,7 @@ class AggregateSSEState(AppState):
                 n_measurements_list.append(pair[2])
                 intensities_sum.append(pair[3])
 
-            for c in range(0, len(self.clients)):
+            for c in range(0, len(self.load('client_list'))):
                 cov_coef += cov_coef_list[c]
                 Amean += intensities_sum[c]
                 n_measurements += n_measurements_list[c]
@@ -521,7 +525,7 @@ class GetCountsState(AppState):
         client = self.load('client')
         counts = client.get_min_count()
         self.log("Counts are computed, sending to coordinator...")
-        self.send_data_to_coordinator(counts.to_dict(), send_to_self=True, use_smpc=self.load('use_smpc'))
+        self.send_data_to_coordinator(counts.to_dict(),  send_to_self=True, use_smpc=False)
         
         if self.is_coordinator:
             self.log("Transition to aggregation of counts...")
@@ -538,17 +542,15 @@ class AggregateCountsState(AppState):
 
     def run(self):
         self.log("Start aggregation of counts...")
-        list_of_counts = self.gather_data(use_smpc=self.load('use_smpc'))
+        list_of_counts = self.gather_data(is_json=False, use_smpc=False)
         min_counts = list()
 
-        if not self.load('use_smpc'):
-            # non-smpc case, need to aggregate            
-            for local_counts in list_of_counts:
-                min_counts.append(pd.DataFrame.from_dict(local_counts, orient='index'))
-            global_min_counts = pd.concat(min_counts, axis=1)
-        else:
-            # smpc case, already aggregated
-            global_min_counts = pd.DataFrame.from_dict(list_of_counts[0], orient='index')
+        for local_counts in list_of_counts:
+            min_counts.append(pd.DataFrame.from_dict(local_counts, orient='index'))
+        global_min_counts = pd.concat(min_counts, axis=1)
+        # else:
+        #     # smpc case, already aggregated
+        #     global_min_counts = pd.DataFrame.from_dict(list_of_counts[0], orient='index')
 
         self.log("Aggregation of counts is done...")
         global_min_counts = global_min_counts.min(axis=1).loc[self.load('stored_features')] + 1
@@ -557,7 +559,8 @@ class AggregateCountsState(AppState):
 
         self.log("Transition to calculation of statistics based on counts...")
         return 'spectral_count_ebayes'
-    
+
+
 @app_state(name='spectral_count_ebayes')
 class SpectralCounteBayesState(AppState):
     def register(self):
