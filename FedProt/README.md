@@ -34,5 +34,49 @@ You can run FedProt as a standalone app in the FeatureCloud test-bed. You can al
 featurecloud test start --app-image featurecloud.ai/fedprot --client-dirs './c1,./c2,./c3' --generic-dir './generic'
 ```
 
+# Structure
+
+```mermaid 
+stateDiagram-v2
+    direction LR
+    [*] --> initial
+    state "Initial Processing" as IP {
+        initial --> common_proteins: coordinator
+        common_proteins --> validation
+        initial --> validation: participant
+        validation --> prot_na_counting
+    }
+    state "Data Filtering" as PCF {
+        
+        prot_na_counting --> prot_na_filtering
+        prot_na_filtering --> compute_XtY_XtX
+        prot_na_counting --> compute_XtY_XtX
+    }
+    state "Federated Linear Regression" as Comp {        
+        compute_XtY_XtX --> compute_beta
+        compute_beta --> compute_SSE
+        compute_XtY_XtX --> compute_SSE
+        compute_SSE --> aggregate_SSE
+    }
+    state "Ftting Contrasts" as FS {
+        aggregate_SSE --> make_contrasts
+        make_contrasts --> fit_contasts
+        fit_contasts --> ebayes
+        ebayes --> get_counts
+    }
+
+    compute_SSE --> get_counts
+    
+    state "Applying counts" as AC {    
+        get_counts --> aggregate_counts
+        aggregate_counts --> spectral_count_ebayes
+        spectral_count_ebayes --> write_results
+        get_counts --> write_results
+    }
+    write_results --> [*]
+
+
+```
+
 # Publication
 ...
