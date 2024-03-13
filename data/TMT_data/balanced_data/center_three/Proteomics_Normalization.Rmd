@@ -1,0 +1,462 @@
+---
+title: 'Normalization of Proteomics Data for Center 3'
+author: "Vivien Wiltzscht & Klaudia Adamowicz"
+output: 
+  html_document:
+    number_sections: false
+    toc: true
+    toc_float: true
+    toc_depth: 5
+    code_folding: hide
+params:
+  last_updated: "`r format(Sys.time(), '%d %B, %Y')`"
+  updated_by: "Yuliya Burankova"
+---
+
+```{r setup, include=FALSE}
+library("PRONE.R")
+
+library("data.table")
+library("UpSetR")
+library("ggplot2")
+library("dplyr")
+library("SummarizedExperiment")
+
+library("RColorBrewer")
+
+# set random number seed
+seed = 27
+set.seed(seed)
+```
+
+This document was last updated on `r params$last_updated` by `r params$updated_by`.
+
+# Run PRONE Normalization
+
+
+## Config
+
+```{r config}
+center <- "center_three"
+
+prot_file <- paste0("/home/yuliya/repos/cosybio/FedProt/data/TMT_data/balanced_data/", center, "/pg_intensities.tsv")
+meta_file <-  paste0("/home/yuliya/repos/cosybio/FedProt/data/TMT_data/balanced_data/", center, "/metadata.tsv")
+
+save_plots <- TRUE
+# Define the final output directory or set NULL if results should note be saved
+final_out_dir <-  paste0("/home/yuliya/repos/cosybio/FedProt/data/TMT_data/balanced_data/", center, "/normalization_results")
+# Creates the folder if it doesn't exist
+if(!is.null(final_out_dir)){dir.create(final_out_dir, recursive = TRUE, showWarnings = FALSE)}
+```
+
+
+### Helper Functions
+
+```{r methods, include=FALSE}
+
+save_tiff <- function(p, filename){
+  tiff(filename = filename, width = 16, height = 11, units = "cm", res = 400)
+  print(p)
+  dev.off()
+}
+
+save_png <- function(p, filename) {
+  png(filename = filename)
+  print(p)
+  dev.off()
+}
+
+```
+
+## Prepare Data
+
+```{r load_data}
+# Load data
+prot_data <- data.table::fread(prot_file)
+meta_data <- data.table::fread(meta_file)
+
+
+# remove rows with NA in reference samples
+dim(prot_data)
+#prot_data <- prot_data %>%
+#  rowwise() %>%
+#  filter(!any(c_across(all_of(meta_data[meta_data$Group  == 'Common Reference',]$Quantitative.column.name)) == 0)) %>%
+#  ungroup() %>% as.data.table()
+dim(prot_data)
+```
+
+##### Changes in Meta Data
+
+- Creating a Copy of `meta_data`:
+We start by creating a copy of the original `meta_data` data table and assign it to md. This approach preserves the original `meta_data` for any future references.
+
+- Modifying and Generating Columns:
+    - Label Creation: A new column named Label is generated. This column concatenates the Animal, Group, Timepoint, and Batch columns, using underscores as separators. This label provides a descriptive identifier for each sample, aiding in both visualization and interpretation.
+    - Location Extraction: We extract the location information from the Group.loc column. If the column contains values like "condition.location", this process isolates and retains only the "location" part.
+    - Condition Duplication: The Group column is duplicated into a new column, Condition, to maintain consistency in the dataset's naming conventions.
+
+- Subsetting Specific Columns:
+In the final step, we use the `.SDcols` functionality to keep only the columns that are essential for our analysis. This results in a refined version of md with a focus on the columns "Column", "TMT", "Batch", "Animal", "Timepoint", "Condition", "Location", and "Label".
+
+```{r change_meta}
+# Make copy of meta_data
+md <- meta_data
+md$Condition <- md$Group
+md$Column <- md$Quantitative.column.name
+md$TMT <- md$Reporter.ion
+
+md[, `:=` (
+    Label = paste0(Group, "_", Center, "_", Pool),
+    Batch = paste0(Center, "_", Pool)
+)]
+
+md <- md[, .SD, .SDcols = c("Column", "TMT", "Batch", "Condition", "Label")]
+
+```
+
+##### Changes in Proteomics Data
+
+- Standardize Column Names: Replace spaces with dots in `prot_data` column names. This makes them more R-friendly and easier to reference in subsequent analyses.
+
+- Handle Zeros: Convert zeros to `NA` in key columns listed in `md$Column`. This is crucial because zeros in proteomics data can indicate missing information, and treating them as `NA` ensures more accurate statistical interpretations.
+    
+
+```{r change_prot}
+# Replace spaces with dots in all column names
+#setnames(prot_data, gsub(" ", ".", names(prot_data)))
+
+# Replace all 0s with NAs in specified columns of prot_data
+prot_data[, (md$Column) := lapply(.SD, function(x) { ifelse(x == 0, NA, x) }), .SDcols = md$Column]
+```
+
+### Load into Summarized Experiment
+
+In this section, we utilize the `load_data` function to import and structure proteomics data for further analysis. This function is specifically designed to handle real-world proteomics datasets, transforming them into a `SummarizedExperiment` object, which is a standard format for handling complex experimental data in bioinformatics.
+
+**The load_data Function**
+
+The `load_data` function efficiently loads and organizes proteomics data, taking into account various aspects of the experimental design:
+
+- `data`: This is the main dataset with proteins as rows and samples as columns (e.g., proteinGroups.txt from MaxQuant).
+- `md`: The metadata or experimental design table, which should include a "Column" that corresponds to sample intensity column names in the data.
+- `protein_column`: The column name in data containing protein IDs.
+- `gene_column`: The column name in data containing gene names.
+- `ref_samples`: Reference samples, particularly useful in TMT experiments.
+- `batch_column`: The column in md that defines experimental batches.
+- `condition_column`: The column in md that defines experimental conditions.
+- `label_column`: A column in md containing simple sample names for visualization purposes.
+
+**Preparing and Loading Data**
+
+In the following R code chunk, we first subset our metadata (md) to focus on specific samples identified in `com_ref_sets`. We then call the load_data function, passing our protein data (`prot_data`), the modified metadata, and specifying relevant columns for protein IDs, gene names, reference samples, batches, conditions, and labels.
+
+```{r prepare_data}
+# Extract all 'ComRef' entries from the 'Animal' column
+com_ref_sets <- md[grep("Common Reference", Condition), Condition]
+# Subset meta_data to keep only rows where Animal matches any value in com_ref_sets
+comref_meta_data <- md[Condition %in% com_ref_sets]$Column
+
+se <- load_data(data = prot_data, md = md, 
+                protein_column = "Protein.IDs", gene_column = "Gene.names", 
+                ref_samples = comref_meta_data, 
+                batch_column = "Batch", condition_column = "Condition", label_column = "Label")
+
+```
+
+### Overview of the Data
+
+In this section, we focus on obtaining a preliminary overview of the proteomics dataset encapsulated within a SummarizedExperiment object. This overview is crucial for understanding the data quality and distribution across various conditions and batches.
+
+- `get_NA_overview`: This function analyzes the extent of missing values (NAs) in the dataset. It returns a list containing the total number of values, the count of NAs, and the percentage of missing values. The analysis is performed on a specified data type, defaulting to log2-transformed values.
+
+- `plot_condition_overview`: This function generates a bar plot visualizing the number of samples per specified condition or batch. The visual representation helps in understanding the distribution of samples across different experimental conditions or batches.
+
+- `plot_upset`: This function generates UpSet plots from the `SummarizedExperiment` data. The plots illustrate the overlaps and unique elements in sets defined by a chosen column (e.g., Animal) in the metadata. The function also allows for color customization based on another metadata column (e.g., Batch). 
+
+
+```{r pre_overview}
+get_NA_overview(se, ain = "log2")
+
+p1 <- plot_condition_overview(se, condition = "Condition")
+p2 <- plot_condition_overview(se, condition = "Batch")
+p3 <- plot_upset(se = se, label_by = "Condition", color_by = "Batch", mb.ratio = c(0.3,0.7))
+p4 <- plot_upset(se = se, label_by = "Condition", color_by = "Batch", mb.ratio = c(0.7,0.3), only_ref = TRUE)
+p5 <- plot_heatmap(se = se, ain = "log2", color_by = c("Condition"), label_by = "Batch")[["log2"]]
+
+file_type <- "png"
+
+if(save_plots && !is.null(final_out_dir)){
+  sub_dir <- paste0(file.path(final_out_dir,"pre_filtering"))
+  dir.create(sub_dir, recursive = TRUE, showWarnings = FALSE)
+   
+  ggsave(filename = file.path(sub_dir, paste0("num_per_condition.", file_type)), plot = p1)
+  ggsave(filename = file.path(sub_dir, paste0("num_per_batch.", file_type)), plot = p2)
+  save_tiff(p = p3, filename = file.path(sub_dir, "upset.tiff"))
+  save_tiff(p = p4, filename = file.path(sub_dir, "upset_ref.tiff"))
+  save_png(p = p5, filename = file.path(sub_dir, paste0("heatmap.", file_type)))
+}
+
+for (p in list(p1, p2, p3, p4, p5)){
+  print(p)
+}
+```
+
+### Filter Proteins
+
+In the subsequent steps, we employ specific filtering criteria to refine the proteomics dataset. This involves the removal of proteins based on the presence of missing values (NAs) and specific attributes. We utilize two distinct functions for this purpose:
+
+- `filter_complete_NA_proteins`: This function targets proteins that exhibit missing values across all samples. Removing these proteins ensures that the dataset focuses only on proteins with measurable values, thereby enhancing the quality and reliability of the data.
+
+- `filter_proteins_by_value`: This function is designed to filter out proteins based on specific values in a given column. For instance, proteins marked as reverse hits, potential contaminants, or only identified by a particular site can be selectively excluded from the analysis, improving the dataset's accuracy.
+
+
+```{r filter_proteins}
+# remove proteins with NAs in all samples
+se <- filter_complete_NA_proteins(se)
+
+# remove proteins with a specific value in a specific column
+#se <- filter_proteins_by_value(se, "Reverse", "+")
+#se <- filter_proteins_by_value(se, "Potential.contaminant", "+")
+#se <- filter_proteins_by_value(se, "Only.identified.by.site", "+")
+
+
+```
+
+```{r filtering_overview}
+get_NA_overview(se, ain = "log2")
+
+p1 <- plot_condition_overview(se, condition = "Condition")
+p2 <- plot_condition_overview(se, condition = "Batch")
+p3 <- plot_upset(se = se, label_by = "Condition", color_by = "Batch", mb.ratio = c(0.3,0.7))
+p4 <- plot_upset(se = se, label_by = "Condition", color_by = "Batch", mb.ratio = c(0.7,0.3), only_ref = TRUE)
+p5 <- plot_heatmap(se = se, ain = "log2", color_by = c("Condition"), label_by = "Batch")[["log2"]]
+
+file_type <- "png"
+
+if(save_plots && !is.null(final_out_dir)){
+  sub_dir <- paste0(file.path(final_out_dir,"post_filtering"))
+  dir.create(sub_dir, recursive = TRUE, showWarnings = FALSE)
+
+  ggsave(filename = file.path(sub_dir, paste0("num_per_condition.", file_type)), plot = p1)
+  ggsave(filename = file.path(sub_dir, paste0("num_per_batch.", file_type)), plot = p2)
+  save_tiff(p = p3, filename = file.path(sub_dir, "upset.tiff"))
+  save_tiff(p = p4, filename = file.path(sub_dir, "upset_ref.tiff"))
+  save_png(p = p5, filename = file.path(sub_dir, "heatmap.png"))
+}
+
+for (p in list(p1, p2, p3, p4, p5)){
+  print(p)
+}
+```
+
+### Check NAs
+
+After filtering the proteomics dataset, analyzing the pattern of missing values (NAs) is essential for understanding the data's quality and guiding further processing. We employ three distinct plotting functions, each providing a unique perspective on the NA distribution.
+
+- `plot_NA_density`: Generates a density plot to visualize the intensity distribution of proteins, segregating them based on the presence or absence of NAs. This plot helps in identifying any potential biases in data due to missing values.
+
+- `plot_NA_frequency`: Creates a plot to show the overlap in protein identification across samples. It visualizes the number of samples identifying each protein against the total count of proteins, offering insights into the commonality of protein identifications.
+
+- `plot_NA_heatmap`: This function crafts a heatmap that represents the pattern of NAs in the dataset. Key customization options include:
+    - `color_by`: Specifies the column to color the samples. Set to NULL by default, which uses the condition column of the SummarizedExperiment object. Setting it to "No" omits the color bar.
+    - `label_by`: Determines the column for labeling the samples. Defaults to NULL, using the labels column of the SummarizedExperiment object. "No" indicates no sample labeling.
+    - `cluster_samples`: Boolean to decide if samples should be clustered.
+    - `cluster_proteins`: Boolean to decide if proteins should be clustered.
+    - `show_row_dend`: Boolean to control the display of the row dendrogram.
+    - `show_column_dend`: Boolean to control the display of the column dendrogram.
+
+```{r filter_proteins_plot, warning=FALSE}
+# check NA pattern
+p1 <- plot_NA_density(se)
+p2 <- plot_NA_frequency(se)
+p3 <- plot_NA_heatmap(se, label_by = "No", color_by = NULL, 
+                      cluster_samples = TRUE, cluster_proteins = TRUE, 
+                      show_row_dend = TRUE, show_column_dend = FALSE)
+
+if(save_plots && !is.null(final_out_dir)){
+  sub_dir <- paste0(file.path(final_out_dir,"pre_na"))
+  dir.create(sub_dir, recursive = TRUE, showWarnings = FALSE)
+
+  ggsave(filename = file.path(sub_dir, paste0("na_density.", file_type)), plot = p1)
+  ggsave(filename = file.path(sub_dir, paste0("na_frequency.", file_type)), plot = p2)
+  
+  save_png(filename = file.path(sub_dir, "na_heatmap.png"), p = p3)
+}
+
+for (p in list(p1, p2, p3)){
+  print(p)
+}
+```
+
+The filter_NA_proteins_by_threshold function is crucial in proteomics data analysis, particularly in refining the dataset by filtering out proteins based on their missing value (NA) pattern. This function operates under a specified threshold, allowing only proteins that meet the minimum fraction of valid (non-NA) values.
+
+Parameters
+
+- `se`: The SummarizedExperiment object containing the complete proteomics dataset.
+- `thr`: The threshold for the minimum fraction of valid values. Any protein with a valid value fraction below this threshold will be filtered out.
+
+```{r filter_NAs}
+#se <- filter_NA_proteins_by_threshold(se, thr = 0.4) #optional!
+p1 <- plot_NA_heatmap(se, color_by = "Batch", label_by = "No", 
+                      cluster_samples = TRUE, cluster_proteins = TRUE,
+                      show_row_dend = TRUE, show_column_dend = FALSE)
+p2 <- plot_heatmap(se = se, ain = "log2", color_by = c("Condition"), label_by = "Batch")[["log2"]]
+
+
+if(save_plots && !is.null(final_out_dir)){
+  sub_dir <- paste0(file.path(final_out_dir,"post_na"))
+  dir.create(sub_dir, recursive = TRUE, showWarnings = FALSE)
+  
+  save_png(filename = file.path(sub_dir, "post_na_heatmap.png"), p = p1)
+  save_png(filename = file.path(sub_dir, "heatmap.png"), p = p2)
+}
+print(p1)
+print(p2)
+```
+
+
+## Normalization on Unscaled Data
+
+The `normalize_se` function is an adaptable tool for normalizing proteomics data within a `SummarizedExperiment` object. It provides flexibility in choosing single normalization methods or combinations thereof, making it highly versatile for various datasets and experimental requirements.
+
+**Parameters**
+
+- `se`: The SummarizedExperiment object containing the proteomics dataset to be normalized.
+- `methods`: A vector specifying the normalization methods to apply. These methods can be individual or combined based on the combination_pattern.
+- `combination_pattern`: (Optional) A string that defines how to combine different normalization methods. For example, with methods = c("IRS", "Median_on_IRS"), the combination_pattern is "_on_". If only single methods are used without any combination, set combination_pattern to NULL.
+- `gamma.0`: A numeric value representing the exponent for the weighted density in RobNorm normalization. This is particularly relevant for datasets with a small sample size, where a lower value (e.g., 0.5 or 0.1) is recommended for better results.
+
+**Available Normalization Methods**
+
+The available methods for normalization, which can be retrieved using get_normalization_methods(), include:
+
+    GlobalMean, GlobalMedian, Median, Mean, IRS, Quantile, VSN
+    LoessF, LoessCyc, RLR, RlrMA, RlrMACyc, EigenMS, MAD
+    RobNorm, TMM, HarmonizR, limBE, NormicsVSN, NormicsMedin
+
+These methods can be applied individually or in various combinations to suit the specific needs of the data analysis.
+
+```{r}
+# Define normalization methods
+normalization_methods <- c("Median", "IRS", "limBE", "limBE_on_Median", "IRS_on_Median", "limBE_on_IRS_on_Median") 
+combination_pattern <- "_on_" # Set to NULL for individual methods
+
+# Normalize the SummarizedExperiment object
+se_normalized <- normalize_se(se, methods = normalization_methods, 
+                              combination_pattern = combination_pattern, gamma.0 = 0.5)
+
+if (!is.null(final_out_dir)){
+  export_data(se = se_normalized, out_dir = final_out_dir)
+}
+
+# Remove Reference Samples for Visualization
+#se_normalized <- remove_reference_samples(se_normalized)
+```
+
+### Qualitative Evaluation
+
+In this section, we employ various visualization techniques to scrutinize the normalized proteomics data encapsulated within a `SummarizedExperiment` object. These visualizations help us understand data distribution and relationships among various experimental factors.
+
+- `Boxplots`: The `plot_boxplots` function visualizes the distribution of normalized data as boxplots. It provides insights into data variability and outliers across samples.
+    - `se`: The normalized `SummarizedExperiment` object.
+    - `ain`: A vector of strings indicating which assays to use as input. If `NULL`, all normalized assays are plotted side by side.
+    - `color_by`: A string specifying the metadata column to use for coloring the samples. If `NULL`, colors are assigned based on conditions.
+    - `label_by`: A string specifying the metadata column for labeling samples. If `NULL`, labels are not displayed.
+    - `ncol`: Number of columns for faceting the plot.
+    - `facet_norm`: A boolean to indicate whether to facet the plot by normalization methods.
+
+- `Density Plots`: The `plot_densities` function produces density plots, which illustrate the distribution of normalized data.
+    - `se`: The `SummarizedExperiment` object containing normalized data.
+    - `ain`: A vector of strings indicating which assays to use. If `NULL`, all normalized assays are considered.
+    - `color_by`: A string specifying the column to color the samples. If `NULL`, colors are based on conditions.
+    - `facet_norm`: A boolean specifying whether to facet by normalization methods.
+
+- `PCA Plots`: The plot_PCA function creates PCA plots, which are useful for visualizing data variation and relationships in a reduced dimensionality space.
+    - `se`: The normalized SummarizedExperiment object.
+    - `ain`: A vector of strings indicating which assays to use. If NULL, all assays are plotted.
+    - `color_by`: A string specifying the column for coloring samples. If NULL, colors are based on timepoints.
+    - `label_by`: A string specifying the column for labeling samples. If NULL, labels are not displayed.
+    - `shape_by`: A string specifying the column for shaping samples. If NULL, shapes are based on conditions.
+    - `facet_norm`: A boolean specifying whether to facet the plot by normalization methods.
+    - `facet_by`: A string specifying the column for faceting the samples.
+    - `ellipse`: A boolean indicating if ellipses should be drawn around clusters.
+    - `ncol`: Number of columns for faceting the plot.
+
+```{r  fig.width=9, fig.height=10}
+p1 <- plot_boxplots(se_normalized, ain = normalization_methods, 
+                    color_by = NULL, label_by = "No", ncol = 2, facet_norm = TRUE)
+p2 <- plot_densities(se_normalized, ain = normalization_methods, 
+                    color_by = "Condition", facet_norm = TRUE, ncol = 2) 
+p3 <- plot_PCA(se_normalized, ain = normalization_methods, color_by = "Condition", 
+               label_by = "No", shape_by = "Batch", facet_norm = TRUE, ncol = 2) + scale_color_brewer(palette = "Set1")
+p4 <- plot_PCA(se_normalized, ain = normalization_methods, color_by = "Batch", 
+               label_by = "No", shape_by = "Condition", facet_norm = TRUE, ncol = 2)  + scale_color_brewer(palette = "Set1")
+
+file_type <- "png"
+
+if(save_plots && !is.null(final_out_dir)){
+  sub_dir <- paste0(file.path(final_out_dir,"post_normalization"))
+  dir.create(sub_dir, recursive = TRUE, showWarnings = FALSE)
+  
+  ggsave(filename = file.path(sub_dir, paste0("boxplot.", file_type)), plot = p1)
+  ggsave(filename = file.path(sub_dir, paste0("density.", file_type)), plot = p2)
+  ggsave(filename = file.path(sub_dir, paste0("pca.", file_type)), plot = p3)
+}
+
+for (p in list(p1, p2, p3, p4)){
+  print(p)
+}
+```
+
+
+### Quantitative Evalutation
+
+In this segment, we delve into assessing the intragroup variation in our normalized proteomics dataset encapsulated in a `SummarizedExperiment` object. Understanding intragroup variation is crucial for evaluating the consistency of data within experimental conditions or groups.
+
+- `Intragroup Correlation`: The `plot_intragroup_correlation` function calculates and visualizes the correlation within groups. This is useful for assessing the similarity or consistency of data within each condition or group.
+    - `se`: The normalized `SummarizedExperiment` object.
+    - `ain`: A vector of strings indicating which assays to use as input. If `NULL`, all normalized assays are considered.
+    - `condition`: Column name specifying the condition for grouping. If `NULL`, the default condition column of the `SummarizedExperiment` object is used.
+    - `method`: Correlation method (pearson, spearman, or kendall).
+
+- `Pooled Coefficient of Variation (PCV)`: The `plot_intragroup_PCV` function calculates and visualizes the pooled coefficient of variation within groups.
+    - `se`: The `SummarizedExperiment` object containing normalized data.
+    - `ain`: A vector of strings indicating which assays to use as input. If `NULL`, all assays are considered.
+    - `condition`: Column name specifying the condition for grouping.
+    - `diff`: A boolean indicating whether to visualize the reduction of intragroup variation compared to log-transformed data.
+
+- `Pooled Median Absolute Deviation (PMAD)`: The `plot_intragroup_PMAD` function showcases the median absolute deviation within groups.
+    - `se`: The normalized `SummarizedExperiment` object.
+    - `ain`: A vector of strings indicating which assays to use as input.
+    - `condition`: Column name for grouping.
+    - `diff`: Boolean indicating whether to compare variation reduction to log-transformed data.
+
+- `Pooled Estimate of Variance (PEV)`: The `plot_intragroup_PEV` function visualizes the pooled estimate of variance within groups.
+    - `se`: The `SummarizedExperiment` object.
+    - `ain`: A vector of strings indicating which assays to use.
+    - `condition`: Column name specifying the condition for grouping.
+    - `diff`: Boolean indicating if variation reduction compared to log-transformed data should be visualized.
+
+
+```{r}
+p1 <- plot_intragroup_correlation(se_normalized, ain = NULL, condition = NULL, method = "pearson")
+#p2 <- plot_intragroup_PCV(se_normalized, ain = normalization_methods, condition = NULL, diff = FALSE)
+p3 <- plot_intragroup_PMAD(se_normalized, ain = normalization_methods, condition = NULL, diff = FALSE)
+p4 <- plot_intragroup_PEV(se_normalized, ain = normalization_methods, condition = NULL, diff = FALSE)
+
+file_type <- "png"
+
+if(save_plots && !is.null(final_out_dir)){
+  sub_dir <- paste0(file.path(final_out_dir,"post_normalization"))
+  dir.create(sub_dir, recursive = TRUE, showWarnings = FALSE)
+  
+  ggsave(filename = file.path(sub_dir, paste0("pearson.", file_type)), plot = p1)
+  #ggsave(filename = file.path(sub_dir, paste0("pcv.", file_type)), plot = p2)
+  ggsave(filename = file.path(sub_dir, paste0("pmad.", file_type)), plot = p3)
+  ggsave(filename = file.path(sub_dir, paste0("pev.", file_type)), plot = p4)
+}
+
+for (p in list(p1, p3, p4)){ #p2, 
+  print(p)
+}
+```
