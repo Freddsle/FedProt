@@ -54,40 +54,17 @@ preprocess_mxout <- function(path, center_metadata, center){
     }
 
     print(center)
-    
     # take only the columns that we need
     pg_intensities <- PG_report %>%
-        select(c("Majority.protein.IDs", "Fasta.headers", "Gene.names", rownames(center_metadata))) %>%
-        mutate(Protein.IDs = ifelse(Fasta.headers == "", Majority.protein.IDs, Fasta.headers)) %>%
-        select(-c(Majority.protein.IDs, Fasta.headers))
-    
-    pg_intensities$Protein.IDs <-sapply(pg_intensities$Protein.IDs, function(x) unique(unlist(strsplit(x, ";"))))
-    pg_intensities$Protein.IDs <- sapply(pg_intensities$Protein.IDs, function(x) x[x != ""])
-    pg_intensities$Protein.IDs <- pg_intensities$Protein.IDs %>%
-        sapply(function(x) paste(x, collapse = ";")) %>% as.character()
-    pg_intensities <- pg_intensities %>%
-        group_by(Protein.IDs, Gene.names) %>%
-        summarise(across(everything(), sum), .groups = "drop")
+        select(c("Majority.protein.IDs", "Gene.names", rownames(center_metadata)))
 
-    pg_intensities <- pg_intensities %>%
-      group_by(Protein.IDs) %>%
-      mutate(duplicate = n() > 1) %>%
-      ungroup()  %>%
-      mutate(Protein.IDs = if_else(duplicate, paste(Protein.IDs, Gene.names, sep = "_"), Protein.IDs)) %>%
-      select(-duplicate) %>% as.data.frame()
-    
-    print(length(pg_intensities$Protein.IDs))
-    
+    print(length(pg_intensities$"Majority.protein.IDs"))
+
     # counts
     pg_counts <- PG_report %>%
-        select(c("Majority.protein.IDs", "Fasta.headers", "Razor...unique.peptides")) %>%
-        mutate(Protein.IDs = ifelse(Fasta.headers == "", Majority.protein.IDs, Fasta.headers)) %>%
-        select(-c(Majority.protein.IDs, Fasta.headers)) %>%
-        group_by(Protein.IDs) %>%
-        summarise(Razor...unique.peptides = min(Razor...unique.peptides)) %>% as.data.frame()
-    
-    rownames(pg_counts) <- pg_counts$Protein.IDs
-    pg_counts$Protein.IDs <- NULL
+        select(c("Majority.protein.IDs", "Razor...unique.peptides")) 
+    rownames(pg_counts) <- pg_counts$Majority.protein.IDs
+    pg_counts$Majority.protein.IDs <- NULL
     pg_counts <- pg_counts + 1
     return(list(pg_intensities, pg_counts))    
 }
@@ -102,7 +79,7 @@ preprocess_mxout <- function(path, center_metadata, center){
 
 save_plots <- TRUE
 # Define the final output directory or set NULL if results should note be saved
-final_out_dir <-  paste0("/home/yuliya/repos/cosybio/FedProt/data/TMT_data/balanced_data/combined/normalization_results_magic")
+final_out_dir <-  paste0("/home/yuliya/repos/cosybio/FedProt/data/TMT_data/balanced_data/combined/normalization_results_full")
 # Creates the folder if it doesn't exist
 if(!is.null(final_out_dir)){dir.create(final_out_dir, recursive = TRUE, showWarnings = FALSE)}
 ```
@@ -173,17 +150,17 @@ for(center in names(list_of_outputs)) {
     pg_intensities <- results_list[[1]]
     counts_df <- results_list[[2]]
 
-    pg_intensities <- pg_intensities[, c("Protein.IDs", "Gene.names", rownames(center_metadata))]
-    colnames(pg_intensities) <- c("Protein.IDs", "Gene.names", center_metadata$Quantitative.column.name)
+    pg_intensities <- pg_intensities[, c("Majority.protein.IDs", "Gene.names", rownames(center_metadata))]
+    colnames(pg_intensities) <- c("Majority.protein.IDs", "Gene.names", center_metadata$Quantitative.column.name)
     
     if(!(nrow(combined_pg_intensities) == 0)) {
-        combined_pg_intensities <- inner_join(combined_pg_intensities, pg_intensities, by = c("Protein.IDs", "Gene.names"))
+        combined_pg_intensities <- full_join(combined_pg_intensities, pg_intensities, by = c("Majority.protein.IDs", "Gene.names"))
     } else {
         combined_pg_intensities <- pg_intensities
     }
 }
 
-combined_pg_intensities <- combined_pg_intensities[, c("Protein.IDs", "Gene.names", metadata$Quantitative.column.name)]
+combined_pg_intensities <- combined_pg_intensities[, c("Majority.protein.IDs", "Gene.names", metadata$Quantitative.column.name)]
 dim(combined_pg_intensities)
 
 
@@ -283,7 +260,7 @@ com_ref_sets <- md[grep("Common Reference", Condition), Condition]
 comref_meta_data <- md[Condition %in% com_ref_sets]$Column
 
 se <- load_data(data = prot_data, md = md, 
-                protein_column = "Protein.IDs", gene_column = "Gene.names", 
+                protein_column = "Majority.protein.IDs", gene_column = "Gene.names", 
                 ref_samples = comref_meta_data, 
                 batch_column = "Batch", condition_column = "Condition", label_column = "Label")
 
@@ -462,10 +439,96 @@ The available methods for normalization, which can be retrieved using get_normal
 
 These methods can be applied individually or in various combinations to suit the specific needs of the data analysis.
 
+
+```{r}
+limmaNorm_2 <- function(se, ain = "log2", aout = "limBE", on_raw = FALSE){
+  dt <- data.table::as.data.table(SummarizedExperiment::assays(se)[[ain]])
+  # check if ain is not raw but normalization should be performed on raw data
+  if(on_raw & ain != "raw"){
+    if(ain == "log2"){
+      warning("Log2 data specified as ain but on_raw is set to TRUE. On_raw=TRUE forces data to be transformed to raw-scale.")
+    }
+    dt <- 2^dt
+  }
+  if(ain == "raw" & on_raw == FALSE){
+    warning("Raw data specified as ain but on_raw is set to FALSE. On_raw=FALSE forces data to be transformed to log2-scale.")
+    dt <- log2(dt)
+  }
+  coldata <- data.table::as.data.table(SummarizedExperiment::colData(se))
+  batch <- S4Vectors::metadata(se)$batch
+  batch_vector <- coldata[[batch]]
+  design <- model.matrix(~0 + metadata(se)$Group)
+  dt_batch <- limma::removeBatchEffect(dt, batch = batch_vector, design = design)
+  
+  if(on_raw){
+    dt_batch <- log2(dt_batch)
+  }
+  SummarizedExperiment::assay(se, aout, FALSE) <- data.table::as.data.table(dt_batch)
+  
+  print('Done new!')
+  return(se)
+}
+
+
+normalize_se_single <- function(se, methods = NULL, gamma.0 = 0.5, reduce_correlation_by = 1, NormicsVSN_quantile = 0.8, top_x = 50, VSN_quantile = 0.9){
+  # vector with available normalization methods
+  norm_functions <- norm_functions <- list(globalMeanNorm, globalMedianNorm, medianNorm, meanNorm, irsNorm,
+                                           quantileNorm, vsnNorm, loessFNorm, loessCycNorm, rlrNorm,
+                                           rlrMANorm, rlrMACycNorm, eigenMSNorm, medianAbsDevNorm, robNorm, tmmNorm, limmaNorm_2, normicsNorm, normicsNorm)
+  norm_names <- c("GlobalMean","GlobalMedian", "Median", "Mean", "IRS", "Quantile", "VSN",
+                  "LoessF", "LoessCyc", "RLR", "RlrMA", "RlrMACyc", "EigenMS", "MAD", "RobNorm", "TMM", "limBE", "NormicsVSN", "NormicsMedian")
+  names(norm_functions) <- norm_names
+
+  # retrieve normalization methods & check if all methods available
+  if(!is.null(methods)){
+    not_available_methods <- methods[!methods %in% norm_names]
+    if(length(not_available_methods) > 0){
+      warning(paste0(paste0(not_available_methods, collapse = ", "), " normalization methods not available!"))
+    }
+  } else {
+    message("All available normalization methods will be performed.")
+    methods <- norm_names
+  }
+
+  # check if IRS or limBE can be executed
+  batch <-S4Vectors::metadata(se)$batch
+  if(sum(c("limBE", "IRS") %in% methods) > 0){
+    if(is.null(batch)){
+      stop("No batch specified! Batch need to be specified for limBE, IRS in the SummarizedExperiment under metadata(se)$batch!")
+    }
+  }
+  refs <- S4Vectors::metadata(se)$refs
+  if("IRS" %in% methods){
+    if(is.null(refs)){
+      stop("No reference samples specified! Reference samples need to be specified for IRS in the SummarizedExperiment under metadata(se)$refs!")
+    }
+  }
+
+  # normalization
+  for(method in methods){
+    func <- norm_functions[[method]]
+    if(method == "RobNorm"){
+      se <- func(se, aout = method, gamma.0 = gamma.0)
+    } else if(method %in% c("NormicsVSN", "NormicsMedian")){
+      se <- func(se, aout = method, method = method, reduce_correlation_by = reduce_correlation_by, NormicsVSN_quantile = NormicsVSN_quantile, top_x = top_x)
+    } else if(method == "VSN"){
+      se <- func(se, aout = method, VSN_quantile = VSN_quantile)
+    } else {
+      se <- func(se, aout = method)
+    }
+
+    # TODO: error handling
+    message(paste0(method, " completed."))
+  }
+  return(se)
+}
+
+```
+
+
 ```{r}
 # Define normalization methods
-#normalization_methods <- c("Median", "IRS", "limBE", "limBE_on_Median", "IRS_on_Median", "limBE_on_IRS_on_Median") 
-normalization_methods <- c("Median") 
+normalization_methods <- c("Median", "IRS", "limBE", "limBE_on_Median", "IRS_on_Median", "limBE_on_IRS_on_Median") 
 combination_pattern <- "_on_" # Set to NULL for individual methods
 
 # Normalize the SummarizedExperiment object
