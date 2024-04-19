@@ -12,7 +12,7 @@ cohorts <- args[2:length(args)] # all but 1st arguments are cohort names
 lfcs <- data.frame()
 for (cohort in cohorts){ 
     fname <- paste0(w_dir,cohort,"_res.tsv")
-    res <- read.table(fname, row.names = 1, sep="\t")
+    res <- read.table(fname, row.names = 1, sep="\t", header = TRUE)
     lfc <- res["logFC"]
     if (dim(lfcs)[[2]] == 0) {
         lfcs <- lfc

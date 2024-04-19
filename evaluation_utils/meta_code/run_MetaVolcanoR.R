@@ -12,7 +12,7 @@ diffexplist <- list()
 
 for (cohort in cohorts){ #,"Other")){
     fname <- paste0(w_dir,cohort,"_res.tsv")
-    res <- read.table(fname, row.names = 1, sep="\t")
+    res <- read.table(fname, row.names = 1, sep="\t", header = TRUE)
     res["Symbol"] <- rownames(res)
     diffexplist[[cohort]] <- res
     
@@ -27,15 +27,13 @@ meta_degs_comb <- combining_mv(diffexp=diffexplist,
                    metafc='Mean',
                    metathr=0.01, 
                    collaps=TRUE,
-                   jobname="MetaVolcano",
+                   jobname='MetaVolcano',
                    outputfolder=".",
-                   draw='HTML')
-
+                   draw="HTML")
 result <- meta_degs_comb@metaresult
 result <- result[order(result$metap),]
-write.table(result,paste0(w_dir,"/MA_CM.tsv"),row.names=TRUE,sep="\t", quote = FALSE)
-#head(result,3)
-
+write.table(result,paste0(w_dir,"/MA_CM.tsv"),row.names=TRUE, sep="\t", quote = FALSE)
+head(result,3)
 
 meta_degs_rem <- rem_mv(diffexp=diffexplist,
             pcriteria="sca.P.Value",
@@ -49,12 +47,12 @@ meta_degs_rem <- rem_mv(diffexp=diffexplist,
             cvar=TRUE,
             metathr=0.01,
             jobname="MetaVolcano",
-            outputfolder=".", 
-            draw='HTML',
+            outputfolder=".",
+            draw="HTML",
             ncores=1)
 
 result <- meta_degs_rem@metaresult
 result  <- result[order(result$randomP),]
 write.table(result,paste0(w_dir,"/MA_REM.tsv"),row.names=TRUE,sep="\t", quote = FALSE)
-#head(result,3)
+head(result,3)
 

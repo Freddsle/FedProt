@@ -15,7 +15,7 @@ pvals_sca <- data.frame()
 
 for (cohort in cohorts){ #,"Other")){
     fname <- paste0(w_dir, cohort, "_res.tsv")
-    res <- read.table(fname, row.names = 1, sep="\t")
+    res <- read.table(fname, row.names = 1, sep="\t", header=TRUE)
 
     lfc <- res["logFC"]
     # pv <- res["P.Value"]
