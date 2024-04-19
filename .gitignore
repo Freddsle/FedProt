@@ -1,0 +1,26 @@
+*.zip
+*.txt
+*.csv
+*.xls
+*.xlsx
+*.tsv
+*.png
+*.tiff
+*.html
+*.pdf
+
+
+# R files
+*.Rproj
+*.Rhistory
+*.RData
+*.rds
+
+# Python files
+*.pyc
+
+# logs 
+*.log
+
+# config 
+*.yml
