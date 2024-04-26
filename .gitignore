@@ -8,6 +8,14 @@
 *.tiff
 *.html
 *.pdf
+*.docx
+*.pptx
+
+# MQ file
+*.params
+*.speclib
+*.fasta
+data/bacterial_data/00_raw_data/README.md
 
 
 # R files

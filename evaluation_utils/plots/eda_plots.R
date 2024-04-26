@@ -2,6 +2,7 @@
 library(tidyverse)
 library(gridExtra)
 library(patchwork)
+library(grid)
 
 pca_plot <- function(
     df, 
@@ -50,7 +51,7 @@ pca_plot <- function(
 }
 
 # boxplot
-boxplot_pg <- function(protein_matrix, metadata_df, quantitativeColumnName, color_col, title, path) {
+boxplot_pg <- function(protein_matrix, metadata_df, quantitativeColumnName, color_col, title, path="") {
   # Reshape data into long format
   long_data <- tidyr::gather(protein_matrix, 
                              key = "file", value = "Intensity")
@@ -91,4 +92,18 @@ plotIntensityDensityByPool <- function(
     labs(title = paste(title, " by", poolColumnName),
          x = "Intensity",
          y = "Density")
+}
+
+
+heatmap_plot <- function(pg_matrix, batch_info, name, condition="condition", lab="lab"){
+    cor_matrix <- cor(na.omit(pg_matrix), use = "pairwise.complete.obs")
+    resulting_plot <- ggpubr::as_ggplot(grid::grid.grabExpr(
+        pheatmap::pheatmap(cor_matrix, 
+                        annotation_col = select(batch_info, c(condition, lab)),
+                        treeheight_row = 0, treeheight_col = 0, 
+                        main = paste0(name, ' heatmap')
+        )
+      )
+    )
+    return(resulting_plot)
 }
