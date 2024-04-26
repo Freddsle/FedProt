@@ -10,7 +10,7 @@ pca_plot <- function(
     path = "", 
     quantitative_col_name = "Quantitative.column.name", 
     col_col = "Group", 
-    shape_col = "Center",
+    shape_col = "",
     show_legend = TRUE
     ){
   pca <- prcomp(t(na.omit(df)))

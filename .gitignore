@@ -22,5 +22,13 @@
 # logs 
 *.log
 
-# config 
+# config , axcept FedProt folder
+*.json
+*.yaml
 *.yml
+# except FedProt folder
+!FedProt/
+
+
+# files in archive folders
+**/archive/*
