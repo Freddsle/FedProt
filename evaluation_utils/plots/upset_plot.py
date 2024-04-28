@@ -3,7 +3,9 @@ from upsetplot import UpSet, from_memberships
 import matplotlib.pyplot as plt
 
 
-def generate_upset_plot(intensities, colname, title, splited=False, categories=['Center1', 'Center2', 'Center3']):
+def generate_upset_plot(intensities, colname, title, splited=False, 
+                        categories=['Center1', 'Center2', 'Center3'],
+                        save_plot=False, path_svg=None):
     # Extracting unique features from each center
     features_sets = {}
     for center, details in intensities.items():
@@ -39,4 +41,9 @@ def generate_upset_plot(intensities, colname, title, splited=False, categories=[
     upset = UpSet(example, subset_size='count', show_counts=True, sort_by='cardinality')
     upset.plot()
     plt.title(title)
-    plt.show()
+
+    if save_plot:
+        plt.savefig(path_svg, dpi=300, format='svg')
+        plt.show()
+    else:
+        plt.show()

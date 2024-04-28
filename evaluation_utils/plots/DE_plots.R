@@ -1,33 +1,43 @@
 library(ggrepel)
 library(ggplot2)
 
-volcano_plot <- function(result, title, show_names=TRUE, show_legend=TRUE) {
-  result$P.Value.log <- -log10(result$adj.P.Val)
 
-  volcano_plot <- ggplot(result, aes(x = logFC, y = P.Value.log, color = abs(logFC) > 0.25 & P.Value.log > -log10(0.05))) +
-    # add name to the color legeng
-    scale_color_manual(values = c("TRUE" = "red", "FALSE" = "black"), 
-                        name = "DE proteins") +
-    # add line for p-value threshold (0.05) and logFC threshold (1)
-    geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
-    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed") +
-    geom_point() +
+volcano_plot <- function(
+    result, title, 
+    pval_column = 'sca.adj.pval', 
+    pval_threshold = 0.05, logfc_threshold = 1, 
+    show_names = TRUE, show_legend = TRUE,
+    save_report = FALSE, report_path = NULL
+  ){
+  result$P.Value.log <- -log10(result[[pval_column]])
+
+  volcano_plot <- ggplot(result, aes(
+        x = logFC, y = P.Value.log, 
+        color = abs(logFC) > logfc_threshold & P.Value.log > -log10(pval_threshold))
+    ) +
+    scale_color_manual(values = c("TRUE" = "red", "FALSE" = "black"), name = "DE proteins") +
+    geom_hline(yintercept = -log10(pval_threshold), linetype = "dashed") +
+    geom_vline(xintercept = c(-logfc_threshold, logfc_threshold), linetype = "dashed") +
+    geom_point(size = 1, alpha = 0.6) +
     theme_minimal() +
-    xlab("Log Fold Change") +
-    ylab("-log10 P-value") +
-    ggtitle(paste0("Volcano plot for limma results, ", title))
+    xlab("Log2FC") +
+    ylab(paste0("-log10 ", pval_column)) +
+    ggtitle(paste0("Volcano plot, ", title))
 
-  # if show lgene is False, remove the legend
-  if(show_legend == FALSE){
+  if(show_legend == FALSE) {
     volcano_plot <- volcano_plot + theme(legend.position = "none")
   }
 
-  if(show_names == TRUE){
-    # add names for PG that passed the thresholds -- using rownames as labels
+  if(show_names == TRUE) {
     volcano_plot <- volcano_plot + 
-      geom_text_repel(data = result[result$adj.P.Val < 0.05 & abs(result$logFC) > 0.25,], 
-                    aes(label = rownames(result[result$adj.P.Val < 0.05 & abs(result$logFC) > 0.25,])), 
-                    size = 3) 
+      geom_text_repel(data = result[result[[pval_column]] < pval_threshold & abs(result$logFC) > logfc_threshold,], 
+                      aes(label = rownames(result[result[[pval_column]] < pval_threshold & abs(result$logFC) > logfc_threshold,])), 
+                      size = 3)
   }
-  return(volcano_plot)
+
+  if(save_report == TRUE) {
+    ggsave(report_path, volcano_plot)
+  } else {
+    return(volcano_plot)
+  }
 }
