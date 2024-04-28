@@ -6,7 +6,6 @@ import bios
 
 import pandas as pd
 import numpy as np
-from scipy import linalg
 
 from client import Client
 import utils
@@ -101,12 +100,7 @@ class CommonProteinsState(AppState):
         self.store(key='client_list', value=client_list)
         self.log(f'List of clients: {client_list}')
 
-        prot_names = list()
-        for features_list in list_of_features_lists:
-            if len(prot_names) == 0:
-                prot_names =  sorted(set(features_list))
-            else:
-                prot_names = sorted(list(set(prot_names) & set(features_list)))
+        prot_names = utils.get_common_proteins(list_of_features_lists)
 
         print(f"[common_proteins] Common proteins list was created. Number of proteins: {len(prot_names)}")
         self.store(key='common_proteins', value=prot_names)
@@ -155,14 +149,20 @@ class NACountState(AppState):
     def run(self):
         self.log("Start NA counting...")
         client = self.load('client')
-        na_count_in_variable, samples_per_class = client.apply_filters(min_f=self.load('max_na_rate'), 
-                                                                       remove_single_peptide_prots=REMOVE_SINGLE_PEPTIDE_PROT)
-        self.send_data_to_coordinator([na_count_in_variable.to_dict(orient='index'), samples_per_class], 
-                                      send_to_self=True, 
-                                      use_smpc=self.load('use_smpc'))        
+        na_count_in_variable, samples_per_class = client.apply_filters(
+            min_f=self.load('max_na_rate'), 
+            remove_single_peptide_prots=REMOVE_SINGLE_PEPTIDE_PROT
+        )
+        self.send_data_to_coordinator(
+            [na_count_in_variable.to_dict(orient='index'), samples_per_class], 
+            send_to_self=True, 
+            use_smpc=self.load('use_smpc')
+        )
+
         if self.is_coordinator:
             self.log(f"Transition to creation of list of proteins passed NA filter ({round(self.load('max_na_rate') * 100, 0)}%)...")
             return 'prot_na_filtering'
+        
         self.log("Transition to computation state...")
         return 'compute_XtY_XTX'
     
@@ -175,33 +175,14 @@ class NAFilterState(AppState):
     def run(self):
         self.log("Start NA filtering...")
         self.log(f"Number of proteins before NA filtering: {len(self.load('common_proteins'))}")
+        
         list_of_na_counts_tuples = self.gather_data(is_json=False, use_smpc=self.load('use_smpc'))
-
-        # merge na counts
-        samples_per_target = dict()
-        prot_na_table = pd.DataFrame()
-
-        for na_pair in list_of_na_counts_tuples:
-            na_count_client = pd.DataFrame.from_dict(na_pair[0], orient='index')
-            samples_per_class_client = na_pair[1]
-
-            for key in samples_per_class_client:
-                samples_per_target[key] = samples_per_class_client[key] + samples_per_target.get(key, 0)
-            if prot_na_table.empty:
-                prot_na_table = na_count_client
-            else:
-                prot_na_table = na_count_client.add(prot_na_table)
-    
-        # filter proteins based on NA counts
-        prot_na_table = prot_na_table.loc[:, samples_per_target.keys()]
-        samples_series = pd.Series(samples_per_target)
-        na_perc = prot_na_table.div(samples_series, axis=1)
-
-        keep_proteins = na_perc[na_perc.apply(lambda row: all(row < self.load('max_na_rate')), axis=1)].index.values
         # sort keep_proteins
-        keep_proteins = sorted(keep_proteins)
+        keep_proteins = utils.filter_features_na_rate(list_of_na_counts_tuples, self.load('max_na_rate'))
+        
         self.log(f"Number of proteins after NA filtering: {len(keep_proteins)}")
         self.store(key='stored_features', value=keep_proteins)
+        
         self.broadcast_data(keep_proteins, send_to_self=True, memo="KeepProteins")
         self.log("Transition to computation state...")
         return 'compute_XtY_XTX'  
@@ -227,10 +208,11 @@ class ComputeXtState(AppState):
         self.log(f"k for XTX computation: {client.design.shape[1]}")
         self.log("XtX and XtY are computed, sending to coordinator...")
 
-        self.send_data_to_coordinator([XtX, XtY],
-                                    send_to_self=True,
-                                    use_smpc=self.load('use_smpc'),
-                                    )
+        self.send_data_to_coordinator(
+            [XtX, XtY],
+            send_to_self=True,
+            use_smpc=self.load('use_smpc'),
+        )
         self.log(f'Design colnames: {client.design.columns.values}')
 
         if self.is_coordinator:
@@ -255,39 +237,12 @@ class ComputeBetaState(AppState):
 
         k = len(self.load('variables'))
         n = len(self.load('stored_features'))
-        XtX_glob = np.zeros((n, k, k))
-        XtY_glob = np.zeros((n, k))
-        stdev_unscaled = np.zeros((n, k))
-        beta = np.zeros((n, k))
-
         self.log(f"Size for computing global beta and beta stdev, k = {k}, n = {n}...")
     
-        # non-smpc case, need to aggregate
-        XtX_list = list()
-        XtY_list = list()
-
-        if not self.load('use_smpc'):
-            # non-smpc case, need to aggregate            
-            for pair in list_of_xt_lists:
-                XtX_list.append(pair[0])
-                XtY_list.append(pair[1])
-            for i in range(0, len(self.load('client_list'))):
-                XtX_glob += XtX_list[i]
-                XtY_glob += XtY_list[i]   
-        else:
-            # smpc case, already aggregated
-            XtX_XtY_list = list_of_xt_lists[0]
-            XtX_glob += XtX_XtY_list[0]
-            XtY_glob += XtX_XtY_list[1]
-
-        self.log("Computing beta and beta stdev...")
-        for i in range(0, n):
-            if linalg.det(XtX_glob[i, :, :]) == 0:
-                self.log(f"XtX is singular for protein {i}, determinant is 0.")
-            invXtX = linalg.inv(XtX_glob[i, :, :])
-            beta[i, :] = invXtX @ XtY_glob[i, :]
-            stdev_unscaled[i, :] = np.sqrt(np.diag(invXtX))
-
+        XtX_glob, XtY_glob = utils.aggregate_XtX_XtY(list_of_xt_lists, n, k, self.load('use_smpc'))
+        self.log("Computing beta and beta stdev...")        
+    
+        beta, stdev_unscaled = utils.compute_beta_and_stdev(XtX_glob, XtY_glob, n, k)
         self.store(key='beta', value=beta)
         self.store(key='stdev_unscaled', value=stdev_unscaled)
 
@@ -314,9 +269,11 @@ class ComputeSSEState(AppState):
         n_measurements = np.array(client.get_not_na())
 
         self.log("SSE and cov_coef are computed, sending to coordinator...")
-        self.send_data_to_coordinator([SSE, cov_coef, intensities_sum, n_measurements],
-                                        send_to_self=True,
-                                        use_smpc=self.load('use_smpc'))
+        self.send_data_to_coordinator(
+            [SSE, cov_coef, intensities_sum, n_measurements],
+            send_to_self=True,
+            use_smpc=self.load('use_smpc')
+        )
         
         if self.is_coordinator:
             self.log("Transition to aggregation of SSE...")
@@ -338,51 +295,15 @@ class AggregateSSEState(AppState):
         k = len(self.load('variables'))
         n = len(self.load('stored_features'))
 
-        SSE = np.zeros(n)
-        cov_coef = np.zeros((k, k))
-        n_measurements = np.zeros(n)
-        Amean = np.zeros(n)
-
-        if not self.load('use_smpc'):
-            # non-smpc case, need to aggregate
-            SSE_list = []
-            cov_coef_list = []
-            n_measurements_list = []
-            intensities_sum = []
-
-            for pair in list_of_sse_cov_coef:
-                SSE_list.append(pair[0])
-                cov_coef_list.append(pair[1])
-                n_measurements_list.append(pair[2])
-                intensities_sum.append(pair[3])
-
-            for c in range(0, len(self.load('client_list'))):
-                cov_coef += cov_coef_list[c]
-                Amean += intensities_sum[c]
-                n_measurements += n_measurements_list[c]
-                for i in range(0, n):
-                    self.SSE[i] += SSE_list[c][i]   
-
-        else:
-            # smpc case, already aggregated
-            sse_cov_coef = list_of_sse_cov_coef[0]
-            for i in range(0, n):
-                SSE[i] += sse_cov_coef[0][i]   
-            cov_coef += sse_cov_coef[1]
-            Amean += sse_cov_coef[2]
-            n_measurements += sse_cov_coef[3]
-
+        SSE, cov_coef, Amean, n_measurements = utils.aggregate_SSE_and_cov_coef(
+            list_of_sse_cov_coef, n, k, self.load('use_smpc'), len(self.load('client_list'))
+        )
+        
         self.log("Aggregation of SSE is done, start computing global parameters...")
-        # estimated covariance matrix of beta
-        cov_coef = linalg.inv(cov_coef)
-        # estimated residual variance
-        var = SSE / (n_measurements - k)
-        # estimated residual standard deviations
-        sigma = np.sqrt(var)
-        # degrees of freedom
-        df_residual = np.ones(n) * (n_measurements - k)
-        # mean log-intensity
-        Amean = Amean / n_measurements
+
+        sigma, cov_coef, df_residual, Amean, var = utils.compute_SSE_and_cov_coef_global(
+            cov_coef, SSE, Amean, n_measurements, n, k
+        )
 
         self.store(key='cov_coef', value=cov_coef)
         self.store(key='var', value=var)
@@ -409,22 +330,10 @@ class MakeContrastsState(AppState):
 
     def run(self):
         self.log("Start making contrasts...")
-        target_classes = self.load('target_classes')
-        contrasts=[([target_classes[0]], [target_classes[1]])]
-        df = {}
+        target_classes = self.load('target_classes')        
+        contrasts_df = utils.make_contrasts(target_classes, self.load('variables'))
+        self.store(key='contrasts', value=contrasts_df)
 
-        for contr in contrasts:
-            group1, group2 = contr
-            for name in group1 + group2:
-                if not name in self.load('variables'):
-                    raise Exception(f"{name} not found in the design matrix.")
-            contr_name = "".join(map(str, group1)) + "_vs_" + "".join(map(str, group2))
-            c = pd.Series(data=np.zeros(len(self.load('variables'))), index=self.load('variables'))
-            c[group1] = 1
-            c[group2] = -1
-            df[contr_name] = c
-        
-        self.store(key='contrasts', value=pd.DataFrame.from_dict(df))
         self.log("Contrasts are computed...")
         self.log("Transition to fitting contrasts...")
         return 'fit_contasts'
@@ -438,46 +347,20 @@ class FitContrastsState(AppState):
     def run(self):
         self.log("Start fitting contrasts...")
         contrast_matrix = self.load('contrasts').values
+        ncoef = self.load('cov_coef').shape[1]        
+        self.store(key='beta', value=beta)
+        self.store(key='stdev_unscaled', value=stdev_unscaled)
 
-        ncoef = self.load('cov_coef').shape[1]
-        # 	Correlation matrix of estimable coefficients
-        # 	Test whether design was orthogonal
-        if not np.any(self.load('cov_coef')):
-            self.log(f".... no coef correlation matrix found in fit - assuming orthogonal...")
-            cormatrix = np.identity(ncoef)
-            orthog = True
-        else:
-            cormatrix = utils.cov2cor(self.load('cov_coef'))
-            if cormatrix.shape[0] * cormatrix.shape[1] < 2:
-                orthog = True
-            else:
-                if np.sum(np.abs(np.tril(cormatrix, k=-1))) < 1e-12:
-                    orthog = True
-                else:
-                    orthog = False
-
-        self.log(f".... orthogonality of design matrix is {orthog}")
-        if np.any(np.isnan(self.load('beta'))):
-            self.log(f"NA coefficients found in fit - replacing with large (but finite) standard deviations")
-            self.store(key='beta', value=np.nan_to_num(self.load('beta'), nan=0))
-            self.store(key='stdev_unscaled', value=np.nan_to_num(self.load('stdev_unscaled'), nan=1e30))
-
-        self.store(key='beta', value=self.load('beta').dot(contrast_matrix))
-        # New covariance coefficiets matrix
-        self.store(key='cov_coef', value=contrast_matrix.T.dot(self.load('cov_coef')).dot(contrast_matrix))
-
-        if orthog:
-            self.store(key='stdev_unscaled', value=np.sqrt((self.load('stdev_unscaled')**2).dot(contrast_matrix**2)))
-        else:
-            n_genes = self.load('beta').shape[0]
-            U = np.ones((n_genes, contrast_matrix.shape[1]))  # genes x contrasts
-            o = np.ones(ncoef)
-            R = np.linalg.cholesky(cormatrix).T
-
-            for i in range(0, n_genes):
-                RUC = R @ (self.load('stdev_unscaled')[i,] * contrast_matrix.T).T
-                U[i,] = np.sqrt(o @ RUC**2)
-            self.store(key='stdev_unscaled', value=U)
+        beta, cov_coef, stdev_unscaled = utils.fit_contrasts(
+            self.load('beta'), 
+            contrast_matrix,
+            self.load('cov_coef'), 
+            self.load('var'), 
+            ncoef
+        )
+        self.store(key='beta', value=beta)
+        self.store(key='cov_coef', value=cov_coef)
+        self.store(key='stdev_unscaled', value=stdev_unscaled)
         
         self.log("Contrasts are fitted...")
         self.log("Transition to eBayes stage...")
@@ -493,14 +376,21 @@ class eBayesState(AppState):
         self.log("Start eBayes stage...")
 
         self.log("Calculating moderated t-statistics...")
-        results, df_total = utils.moderatedT(self.load('var'), self.load('df_residual'),
-                                             self.load('beta'), self.load('stdev_unscaled'))
+        results, df_total = utils.moderatedT(
+            self.load('var'), 
+            self.load('df_residual'),
+            self.load('beta'), 
+            self.load('stdev_unscaled')
+        )
         results["AveExpr"] = self.load('Amean')
         self.log("Result table is pre-computed...")
 
         self.log("Computing B statistic...")
-        results = utils.Bstat(df_total, self.load('stdev_unscaled'), results,
-                              stdev_coef_lim=np.array([0.1, 4]), proportion=0.01)
+        results = utils.Bstat(
+            df_total, 
+            self.load('stdev_unscaled'), 
+            results,
+            stdev_coef_lim=np.array([0.1, 4]), proportion=0.01)
         self.log("B statistic is computed...")
 
         self.log("Computing p-values...")        
