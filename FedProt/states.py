@@ -357,12 +357,12 @@ class FitContrastsState(AppState):
         self.store(key='beta', value=beta)
         self.store(key='stdev_unscaled', value=stdev_unscaled)
 
-        beta, cov_coef, stdev_unscaled = utils.fit_contrasts(
+        beta, stdev_unscaled, cov_coef = utils.fit_contrasts(
             self.load('beta'), 
             contrast_matrix,
             self.load('cov_coef'), 
-            self.load('var'), 
-            ncoef
+            ncoef,
+            self.load('stdev_unscaled')
         )
         self.store(key='beta', value=beta)
         self.store(key='cov_coef', value=cov_coef)

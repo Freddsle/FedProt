@@ -9,8 +9,10 @@ import statsmodels.api as sm
 from statsmodels.stats.multitest import multipletests
 
 import rpy2.robjects as robjects
+robjects.r.options(warn=-1)
 from rpy2.robjects.packages import importr
 from rpy2.robjects import conversion, default_converter
+
 
 import logging
 
@@ -65,11 +67,12 @@ def aggregate_XtX_XtY(list_of_xt_lists, n, k, used_SMPC):
     XtY_list = list()
 
     if not used_SMPC:
-        # non-smpc case, need to aggregate            
+        # non-smpc case, need to aggregate
+        logging.info('SMPC is not used, aggregating XtX and XtY')       
         for pair in list_of_xt_lists:
             XtX_list.append(pair[0])
             XtY_list.append(pair[1])
-        for i in range(0, len(self.load('client_list'))):
+        for i in range(0, len(list_of_xt_lists)):
             XtX_glob += XtX_list[i]
             XtY_glob += XtY_list[i]   
     else:
@@ -211,7 +214,7 @@ def check_na_beta_stdev(beta, stdev_unscaled):
     return beta, stdev_unscaled
         
 
-def fit_contrasts(beta, contrast_matrix, cov_coef, ncoef):
+def fit_contrasts(beta, contrast_matrix, cov_coef, ncoef, stdev_unscaled):
 
     orthog, cormatrix = check_orthogonality(cov_coef, ncoef)
     beta, stdev_unscaled = check_na_beta_stdev(beta, stdev_unscaled)
