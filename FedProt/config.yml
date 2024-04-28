@@ -9,7 +9,11 @@ fedprot:
   max_na_rate: 0.8
   log_transformed: false
 
-    # label: "Condition"
+  experiment_type: 'DIA'
+  remove_single_pep_protein: false
+  use_counts: true
+
+  label: "condition"
   target_classes: ["Glu", "Pyr"]
   covariates: []
 

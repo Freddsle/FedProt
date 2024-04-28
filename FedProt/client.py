@@ -93,7 +93,11 @@ class Client:
 
         if count_pep_file_path:
             self.pep_counts = pd.read_csv(count_pep_file_path, sep="\t")
-        self.counts = pd.read_csv(count_file_path, sep="\t", index_col=0)
+        if not count_file_path:
+            self.use_counts = False
+        else:
+            self.use_counts = True
+            self.counts = pd.read_csv(count_file_path, sep="\t", index_col=0)
         self.design = pd.read_csv(design_file_path, sep="\t", index_col=0)
 
     def process_files(self, log_transformed=False):
@@ -209,7 +213,8 @@ class Client:
         # reorder genes
         self.prot_names = list(self_prots)
         self.intensities = self.intensities.loc[self.prot_names, :]
-        self.counts = self.counts.loc[self.prot_names, :]
+        if self.use_counts:
+            self.counts = self.counts.loc[self.prot_names, :]
 
     def validate_variables(self, variables):
         """ensure that design matrix contains all variables"""
@@ -385,7 +390,8 @@ class Client:
             raise ValueError(f"Client {self.cohort_name}: No proteins passed the filters.")
         else:
             self.prot_names = passed_prots
-            self.counts = self.counts.loc[self.prot_names, :]
+            if self.use_counts:
+                self.counts = self.counts.loc[self.prot_names, :]
             self.intensities = self.intensities.loc[self.prot_names, self.design.index]
 
         if self.experiment_type == EXPERIMENT_TYPE:

@@ -17,9 +17,6 @@ APP_DIR = "/app"
 MOUNT_DIR = "/mnt/input"
 OUTPUT_DIR = "/mnt/output"
 
-REMOVE_SINGLE_PEPTIDE_PROT = False
-EXPERIMENT_TYPE = 'DIA'
-
 
 @app_state(name='initial', role=Role.BOTH)
 class InitialState(AppState):
@@ -35,14 +32,19 @@ class InitialState(AppState):
             self.configure_smpc()
         # defining the client
         cohort_name = self.id
+
+        if self.load('use_counts'):
+            counts_path = os.path.join(MOUNT_DIR, self.load('counts_name'))
+        else:
+            counts_path = None
         
         # # initializing the client includes loading and preprocessing of the data
         client = Client(
             cohort_name,
             intensities_file_path = os.path.join(MOUNT_DIR, self.load('intensities_name')),
-            count_file_path = os.path.join(MOUNT_DIR, self.load('counts_name')),
+            count_file_path = counts_path,
             annotation_file_path = os.path.join(MOUNT_DIR, self.load('design_name')),
-            experiment_type = EXPERIMENT_TYPE,
+            experiment_type = self.load('experiment_type'),
             log_transformed = self.load('log_transformed')
         ) 
         self.log(f"Data read! {client.intensities.shape[1]} samples, {client.intensities.shape[0]} proteins")
@@ -67,8 +69,13 @@ class InitialState(AppState):
         config = bios.read(os.path.join(MOUNT_DIR, CONFIG_FILE))
         config = config["fedprot"]
             
+        self.store(key='experiment_type', value=config['experiment_type'])
+        self.store(key='remove_single_pep_protein', value=config['remove_single_pep_protein'])
+        
         self.store(key='intensities_name', value=config['intensities'])
-        self.store(key='counts_name', value=config['counts'])
+        self.store(key='use_counts', value=config['use_counts'])
+        if config['use_counts']:
+            self.store(key='counts_name', value=config['counts'])
         self.store(key='design_name', value=config['design'])
         self.store(key='sep', value=config['sep'])
 
@@ -81,7 +88,6 @@ class InitialState(AppState):
         
         self.store(key='result_table', value=config['result_table'])
         
-
 
 @app_state(name='common_proteins')
 class CommonProteinsState(AppState):
@@ -151,7 +157,7 @@ class NACountState(AppState):
         client = self.load('client')
         na_count_in_variable, samples_per_class = client.apply_filters(
             min_f=self.load('max_na_rate'), 
-            remove_single_peptide_prots=REMOVE_SINGLE_PEPTIDE_PROT
+            remove_single_peptide_prots=self.load('remove_single_pep_protein')
         )
         self.send_data_to_coordinator(
             [na_count_in_variable.to_dict(orient='index'), samples_per_class], 
@@ -371,6 +377,7 @@ class FitContrastsState(AppState):
 class eBayesState(AppState):
     def register(self):
         self.register_transition('get_counts', role=Role.COORDINATOR)
+        self.register_transition('write_results', role=Role.BOTH)
 
     def run(self):
         self.log("Start eBayes stage...")
@@ -400,8 +407,13 @@ class eBayesState(AppState):
                                   adjust="fdr_bh", p_value=1.0, lfc=0, confint=0.95)
         self.log("P-values are computed...")
         self.store(key='results', value=results)
-        self.log("Transition to getting counts...")
-        return 'get_counts'
+        
+        if self.load('use_counts'):
+            self.log("Transition to getting counts...")
+            return 'get_counts'
+        else:
+            self.log("Transition to writing results...")
+            return 'write_results'
 
 
 @app_state(name='get_counts')
