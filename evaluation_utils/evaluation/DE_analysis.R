@@ -37,6 +37,16 @@ run_DE <- function(intensities, counts, design, contrasts){
   fit2 <- contrasts.fit(fit, contrasts)
   fit3 <- eBayes(fit2)
 
+  if(is.null(counts)){
+    results.table = limma::topTable(fit3, coef=1, n=Inf, confint=TRUE)
+    cat("Count information is not available\n")
+    cat("Using P.Value and adj.P.Val as sca.P.Value and sca.adj.pval\n")
+    # rename
+    results.table$sca.adj.pval = results.table$adj.P.Val
+    results.table$sca.P.Value = results.table$P.Value
+    return(results.table)
+  }
+
   fit3$count <- counts[rownames(fit3$coefficients), "count"] + 1
   if(is.na(min(fit3$count)) | min(fit3$count) == 0){
     print("No DEqMS results")

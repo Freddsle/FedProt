@@ -20,12 +20,12 @@ try:
         MODE = str(sys.argv[2])
         cohorts = str(sys.argv[3]).split(",")
         output_path = str(sys.argv[4])
-    else:
-        # test data
-        data_dir = "/home/yuliya/repos/cosybio/FedProt/data/bacterial_data/"
-        MODE = "balanced"
-        cohorts = ["lab_A", "lab_B", "lab_C", "lab_D", "lab_E"]
-        output_path = "/home/yuliya/repos/cosybio/FedProt/evaluation/bacterial/"
+    # else:
+    #     # test data
+    #     data_dir = "/home/yuliya/repos/cosybio/FedProt/data/bacterial_data/"
+    #     MODE = "balanced"
+    #     cohorts = ["lab_A", "lab_B", "lab_C", "lab_D", "lab_E"]
+    #     output_path = "/home/yuliya/repos/cosybio/FedProt/evaluation/bacterial/"
 except ValueError:
     print("Invalid input.")
     sys.exit(1)
@@ -45,6 +45,8 @@ design_path = config["fedprot"]["design"]
 use_counts = config["fedprot"]["use_counts"]
 if use_counts:
     counts_path = config["fedprot"]["counts"]
+else:
+    counts_path = None
 result_name = config["fedprot"]["result_table"]
 
 max_na_rate = config["fedprot"]["max_na_rate"]
@@ -211,6 +213,15 @@ results = utils.topTableT(
     df_total,
     adjust="fdr_bh", p_value=1.0, lfc=0, confint=0.95)
 logging.info("P-values have been computed...")
+
+# if not using counts - stop here and save the results
+if not use_counts:
+    logging.info("Writing results to file...")
+    logging.info("File: " + f"{output_path}/{result_name}")
+    output_file = f"{output_path}/{result_name}"
+    results.to_csv(output_file, sep="\t")
+    logging.info(f"Results have been saved to {output_file}")
+    sys.exit(0)
 
 # CLIENT SIDE
 list_of_counts = []

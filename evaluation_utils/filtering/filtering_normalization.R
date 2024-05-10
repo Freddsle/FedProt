@@ -35,7 +35,7 @@ filter_per_center <- function(intensities, metadata, quantitative_column_name, c
   return(filtered_intensities)
 }
 
-filter_by_condition <- function(intensities, metadata, quantitative_column_name, groups, groups_column_name) {
+filter_by_condition <- function(intensities, metadata, quantitative_column_name, groups, groups_column_name, min_f=0.8) {
   cat('Filtering by condition - two not-NA per condition\n')
   cat('\tBefore filtering:', dim(intensities), "\n")
 
@@ -49,7 +49,7 @@ filter_by_condition <- function(intensities, metadata, quantitative_column_name,
 
   # Determine rows with at least 2 non-NA values for each group's samples
   conditions <- sapply(condition_samples, function(samples) {
-    rowSums(!is.na(intensities[, samples, drop = FALSE])) >= 2
+    rowSums(is.na(intensities[, samples, drop = FALSE])) / length(samples) <= min_f
   })
   # Filter intensities where all conditions are met
   filtered_intensities <- intensities[rowSums(conditions) == length(groups), ]

@@ -39,7 +39,7 @@ class Client:
         if not self.open_dataset(intensities_file_path, 
                                  count_file_path, 
                                  annotation_file_path, 
-                                 log_transformed):
+                                 log_transformed=log_transformed):
             raise Exception("Failed to open dataset")
 
         self.XtX = None
@@ -62,7 +62,7 @@ class Client:
         """
         self.read_files(intensities_file_path, count_file_path, design_file_path, count_pep_file_path)
 
-        if not self.process_files(log_transformed):
+        if not self.process_files(log_transformed=log_transformed):
             logging.error(f"Client {self.cohort_name}: Failed to process files.")
             return False
         
@@ -91,13 +91,15 @@ class Client:
         self.intensities = pd.read_csv(intensities_file_path, sep="\t", index_col=0)
         self.sample_names = list(self.intensities.columns.values)
 
-        if count_pep_file_path:
-            self.pep_counts = pd.read_csv(count_pep_file_path, sep="\t")
         if not count_file_path:
+            logging.info(f"Client {self.cohort_name}: Not using counts.")
             self.use_counts = False
         else:
+            logging.info(f"Client {self.cohort_name}: Using counts.")
             self.use_counts = True
             self.counts = pd.read_csv(count_file_path, sep="\t", index_col=0)
+            if count_pep_file_path:
+                self.pep_counts = pd.read_csv(count_pep_file_path, sep="\t")
         self.design = pd.read_csv(design_file_path, sep="\t", index_col=0)
 
     def process_files(self, log_transformed=False):
@@ -114,6 +116,9 @@ class Client:
         if not log_transformed:
             self.intensities = np.log2(self.intensities + 1)        
             logging.info(f"Client {self.cohort_name}: Log2(x+1) transformed intensities.")
+        else:
+            logging.info(f"Client {self.cohort_name}: Intensities are already log2 transformed.")
+        
         return True
     
     def check_and_reorder_samples(self):

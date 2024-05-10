@@ -107,3 +107,23 @@ heatmap_plot <- function(pg_matrix, batch_info, name, condition="condition", lab
     )
     return(resulting_plot)
 }
+
+
+heatmap_nocor_plot <- function(pg_matrix, batch_info, name, condition="condition", lab="lab", use_breaks=TRUE){
+    
+    if(use_breaks){
+      breaks = seq(-3, 3, length.out = 101)
+    } else {
+      breaks = NA
+    }
+    resulting_plot <- pheatmap::pheatmap(pg_matrix, 
+                        annotation_col = select(batch_info, c(condition, lab)),
+                        treeheight_row = 0, treeheight_col = 0,
+                        # do not cluster the rows and cols
+                        cluster_rows = FALSE, cluster_cols = FALSE,
+                        main = paste0(name, ' heatmap'),
+                        # set limits to -3,3
+                        breaks = breaks,
+        )
+    return(resulting_plot)
+}
