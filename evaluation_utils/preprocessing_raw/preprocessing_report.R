@@ -29,11 +29,14 @@ preprocess_data_mxout <- function(path, metadata, data_type, do_filter=TRUE){
     
     # General preprocessing
     if(do_filter){
+        cat("Filtering out decoy, contaminant, and modification site-only entries...\n")
+        cat(paste0('Initial data count: ', nrow(data_report)), '\n')
         data_report <- data_report[!data_report$Reverse=="+",]
         data_report <- data_report[!data_report$Potential.contaminant=="+",]
         if(!all(is.na(data_report$Only.identified.by.site))) {
             data_report <- data_report[!data_report$Only.identified.by.site=="+",]
         }
+        cat(paste0('Filtered data count: ', nrow(data_report)), '\n')
     }
     
     # Data type specific handling

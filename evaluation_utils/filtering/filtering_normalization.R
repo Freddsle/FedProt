@@ -1,5 +1,6 @@
 library(tidyverse)
 library(data.table)
+library(foreach)
 
 #################################################################
 # Filtering functions
@@ -113,4 +114,83 @@ irsNorm <- function(dt, md, batch, refs){
   dt_irs <- subset(dt_irs, select = colnames(dt))
   
   return(dt_irs)
+}
+
+
+#######################################################
+get_samples <- function(metadata, pool, column_name = "file") {
+  filtered_data <- metadata[metadata$Pool == pool, ] %>%
+    select(all_of(column_name)) %>% as.list() %>% unlist()
+  return(filtered_data)
+}
+
+get_intensities <- function(intensities, metadata, pool) {
+  samples <- get_samples(metadata, pool) %>% as.character()
+  intensities <- intensities[, samples]
+  return(intensities)
+}
+
+aggregate_data <- function(data, method) {
+  if (method == "average") {
+    return(rowMeans(data, na.rm = TRUE))
+  } else {
+    return(rowSums(data, na.rm = TRUE))
+  }
+}
+
+calculate_geometric_mean <- function(irs) {
+  geometric_mean <- apply(irs, 1, function(x) {
+    non_zero_values <- x[x > 0]  # Exclude zeros from the computation
+    non_zero_values <- non_zero_values[!is.na(non_zero_values)]
+    exp(mean(log(non_zero_values)))  # Compute geometric mean of non-zero values
+  })
+  
+  return(geometric_mean)
+}
+
+# Function to process data for a single center
+irsNorm_in_silico_single_center <- function(data, metadata, pool_col = "Pool",
+                                            column_name = "file",
+                                            center = NULL,
+                                            aggregation_method = "average") {
+  # Initialize IRS table
+  irs <- tibble()
+
+  # Process each pool to create IRS references
+  pools <- unique(metadata[[pool_col]])
+  for (pool in pools) {
+    samples <- get_samples(metadata, pool, column_name)
+    intensities <- data[, samples]
+    processed_data <- aggregate_data(intensities, aggregation_method)
+    if (ncol(irs) == 0) {
+        irs <- tibble(!!pool := processed_data)  
+    } else {
+        irs[[pool]] <- processed_data
+    }
+  }
+
+  # Compute geometric mean across all IRS references
+  irs_average <- calculate_geometric_mean(irs)
+
+  # Calculate scaling factors and normalize the data
+  corrected_data <- cbind(data, irs)  # Starting with original data to apply corrections
+  for (pool in pools) {
+    scaling_factor <- irs_average / irs[[pool]]
+    pool_samples <- c(get_samples(metadata, pool, column_name), pool) %>% as.character()
+    corrected_data[, pool_samples] <- corrected_data[, pool_samples] * scaling_factor
+  }
+
+  # update metadata with IRS column names
+  template <- setNames(as.list(rep(NA, ncol(metadata))), names(metadata))
+  new_metadata_rows <- do.call(rbind, lapply(pools, function(pool) {
+    new_row <- template
+    new_row$Pool <- pool
+    new_row$file <- pool
+    new_row$condition <- "in_silico"
+    new_row$lab <- center
+    return(new_row)
+  }))
+  metadata <- rbind(metadata, new_metadata_rows)
+
+  return(list(corrected_data = corrected_data, metadata = metadata))
 }

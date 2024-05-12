@@ -99,7 +99,7 @@ heatmap_plot <- function(pg_matrix, batch_info, name, condition="condition", lab
     cor_matrix <- cor(na.omit(pg_matrix), use = "pairwise.complete.obs")
     resulting_plot <- ggpubr::as_ggplot(grid::grid.grabExpr(
         pheatmap::pheatmap(cor_matrix, 
-                        annotation_col = select(batch_info, c(condition, lab)),
+                        annotation_col = batch_info %>% dplyr::select(.data[[condition]], .data[[lab]]),
                         treeheight_row = 0, treeheight_col = 0, 
                         main = paste0(name, ' heatmap')
         )
