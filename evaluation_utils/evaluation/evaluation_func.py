@@ -476,3 +476,44 @@ def plot_stats_for_topN(dfs,
     if figfile:
         fig.savefig(figfile)
     return all_stats
+
+
+def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
+                        num_top_genes=range(5, 700, 5),
+                        figfile=""):
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4), sharey=sharey)
+    datasets = ["Balanced", "Imbalanced"]
+
+    # Convert column names to integers to plot as numeric x-axis
+    for k, df in jaccard_dfs.items():
+        new_columns = [int(col) for col in df.columns]
+        df.columns = new_columns
+        df.sort_index(axis=1, inplace=True)  # Ensures columns are in numeric order for plotting
+
+    for i, ds in enumerate(datasets):
+        df = jaccard_dfs[ds]
+        for method in methods:
+            method_data = df.loc[method].mean()  # mean across rows for each method
+            std_dev = df.loc[method].std()       # standard deviation across rows for each method
+
+            # Getting the numerical range for x-axis from column names
+            num_top_genes = df.columns
+            mean_scores = method_data
+            std_deviation = std_dev
+            
+            axes[i].plot(num_top_genes, mean_scores, label=method, color=color_dict["Methods"][method])
+            axes[i].fill_between(num_top_genes, mean_scores - std_deviation, mean_scores + std_deviation, color=color_dict["Methods"][method], alpha=0.1)
+        
+        axes[i].set_title(f"{ds} simulated data")
+        axes[i].set_xlabel("Number of top-ranked proteins", fontsize=14)
+        axes[i].set_yticks(np.arange(0, 1.1, 0.1))
+        if i == 0:
+            axes[i].set_ylabel("Jaccard similarity", fontsize=14)
+            axes[i].legend(title="Method")
+
+        # add y ticks for the second plot (because they are shared and was removed by sharey=True)
+
+    if figfile:
+        fig.savefig(figfile)
+
+    plt.show()
