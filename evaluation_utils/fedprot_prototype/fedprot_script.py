@@ -43,6 +43,7 @@ with open(f"{data_dir}/{cohorts[0]}/config.yml", 'r') as file:
 intensity_path = config["fedprot"]["intensities"]
 design_path = config["fedprot"]["design"]
 use_counts = config["fedprot"]["use_counts"]
+
 if use_counts:
     counts_path = config["fedprot"]["counts"]
 else:
@@ -53,21 +54,35 @@ max_na_rate = config["fedprot"]["max_na_rate"]
 log_transformed = config["fedprot"]["log_transformed"]
 
 experiment_type = config["fedprot"]["experiment_type"]
+
+if experiment_type == "TMT":
+    ref_type = config["fedprot"]["ref_type"]
+    plex_covariate = config["fedprot"]["plex_covariate"]
+    plex_column = config["fedprot"]["plex_column"]
+
+    use_median = config["fedprot"]["use_median"]
+    use_irs = config["fedprot"]["use_irs"]
+
 remove_single_pep_protein = config["fedprot"]["remove_single_pep_protein"]
 target_classes = config["fedprot"]["target_classes"]
 covariates = config["fedprot"]["covariates"]
 
+logging.info(f"Data directory: {data_dir}")
 
 #############################################################
 # initialize the client
 store_clients = {}
 
 prot_names = []
+if experiment_type == "TMT":
+    if plex_covariate:
+        plex_covariates_list = []
 
 # clinets are joining
 for cohort_name in cohorts:
     intensity_file_path = f"{data_dir}/{cohort_name}/{intensity_path}"
     design_file_path = f"{data_dir}/{cohort_name}/{design_path}"
+
     if use_counts:
         count_file_path = f"{data_dir}/{cohort_name}/{counts_path}"
     else:
@@ -81,11 +96,21 @@ for cohort_name in cohorts:
         design_file_path,
         experiment_type,
         log_transformed = log_transformed,
+        ref_type = ref_type,
+        plex_column = plex_column,
+        target_classes = target_classes,
     )
     store_clients[client.cohort_name] = client
 
+    # add plex covariates to the list
+    if experiment_type == "TMT":
+        if plex_covariate:
+            plex_covariates_list += client.tmt_names
+
     # add list (as list of lists) of protein names
     prot_names.append(client.prot_names)
+
+logging.info(f"Plexes: {plex_covariates_list}")
 
 # SERVER SIDE
 prot_names = utils.get_common_proteins(prot_names)
@@ -97,14 +122,18 @@ variables = target_classes + covariates
 # apply filters
 
 list_of_na_counts_tuples = []
+total_samples = {}
 
 for c in cohorts:
     client = store_clients[c]
     client.validate_inputs(prot_names, variables)
 
     # add cohort effect columns to each design matrix
-    # add 1 column less than the number of cohorts
-    client.add_cohort_effects_to_design(cohorts[1:])
+    # if plex_covariate exists, use this column as a cohort effect
+    if plex_covariate:
+        client.add_cohort_effects_to_design(plex_covariates_list[1:], plex_covariate)
+    else:
+        client.add_cohort_effects_to_design(cohorts[1:])
 
     logging.info(f"Samples in {client.cohort_name} data: {len(client.sample_names)}")        
     logging.info(f"Protein groups in {client.cohort_name} data:  {len(client.prot_names)}")
@@ -114,6 +143,8 @@ for c in cohorts:
             min_f=max_na_rate, 
             remove_single_peptide_prots=remove_single_pep_protein
         )
+    # add each value from a dict to a list
+    total_samples[c] = sum(samples_per_class.values())
     # add both as a tuple to the list
     list_of_na_counts_tuples.append((
         na_count_in_variable.to_dict(orient='index'), samples_per_class))
@@ -121,6 +152,34 @@ for c in cohorts:
 # SERVER SIDE
 keep_proteins = utils.filter_features_na_rate(list_of_na_counts_tuples, max_na_rate)
 logging.info(f"SERVER: Proteins after filtering: {len(keep_proteins)}")
+
+
+# Normalize intensities
+
+# CLIENT SIDE
+# if TMT and use_median, compute medians
+if experiment_type == "TMT" and use_median:
+    # server nows about total_samples 
+    avg_medians = []
+    for c in cohorts:
+        client = store_clients[c]
+        avg_medians.append(client.compute_medians())
+        
+# SERVER SIDE
+# if TMT and use_median, compute medians
+if experiment_type == "TMT" and use_median:
+    global_median_mean = utils.aggregate_medians(avg_medians, total_samples)
+
+# CLIENT SIDE
+# if TMT and use_median, compute medians
+if experiment_type == "TMT" and use_median:
+    for c in cohorts:
+        client = store_clients[c]
+        client.mean_median_centering(global_median_mean)
+
+        if experiment_type == "TMT" and use_irs:
+            client.irsNorm_in_silico_single_center()
+
 
 # CLIENT SIDE
 XtX_XtY_list = []

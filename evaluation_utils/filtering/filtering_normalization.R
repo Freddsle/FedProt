@@ -77,6 +77,8 @@ medianNorm <- function(dt){
   norm_dt <- data.table::as.data.table(norm_dt)
   colnames(norm_dt) <- colnames(dt)
   rownames(norm_dt) <- rownames(dt)
+  norm_dt <- as.data.frame(norm_dt)
+  rownames(norm_dt) <- rownames(dt)
   return(norm_dt)
 }
 
@@ -120,12 +122,13 @@ irsNorm <- function(dt, md, batch, refs){
 #######################################################
 get_samples <- function(metadata, pool, column_name = "file") {
   filtered_data <- metadata[metadata$Pool == pool, ] %>%
-    select(all_of(column_name)) %>% as.list() %>% unlist()
+    dplyr::pull(all_of(column_name)) %>%
+    as.character()
   return(filtered_data)
 }
 
 get_intensities <- function(intensities, metadata, pool) {
-  samples <- get_samples(metadata, pool) %>% as.character()
+  samples <- get_samples(metadata, pool)
   intensities <- intensities[, samples]
   return(intensities)
 }
@@ -142,7 +145,7 @@ calculate_geometric_mean <- function(irs) {
   geometric_mean <- apply(irs, 1, function(x) {
     non_zero_values <- x[x > 0]  # Exclude zeros from the computation
     non_zero_values <- non_zero_values[!is.na(non_zero_values)]
-    exp(mean(log(non_zero_values)))  # Compute geometric mean of non-zero values
+    exp(mean(log(non_zero_values), na.rm = TRUE))  # Compute geometric mean of non-zero values
   })
   
   return(geometric_mean)
@@ -176,21 +179,28 @@ irsNorm_in_silico_single_center <- function(data, metadata, pool_col = "Pool",
   corrected_data <- cbind(data, irs)  # Starting with original data to apply corrections
   for (pool in pools) {
     scaling_factor <- irs_average / irs[[pool]]
-    pool_samples <- c(get_samples(metadata, pool, column_name), pool) %>% as.character()
+    scaling_factor[is.na(scaling_factor) | is.infinite(scaling_factor)] <- 1 
+    pool_samples <- c(get_samples(metadata, pool, column_name), pool)
     corrected_data[, pool_samples] <- corrected_data[, pool_samples] * scaling_factor
   }
 
   # update metadata with IRS column names
-  template <- setNames(as.list(rep(NA, ncol(metadata))), names(metadata))
+  template <- setNames(as.list(rep("NA", ncol(metadata))), names(metadata))
+
   new_metadata_rows <- do.call(rbind, lapply(pools, function(pool) {
+    condition_value <- "in_silico"
     new_row <- template
     new_row$Pool <- pool
     new_row$file <- pool
-    new_row$condition <- "in_silico"
+    new_row$condition <- condition_value
     new_row$lab <- center
     return(new_row)
   }))
+  metadata <- metadata %>% mutate_all(as.character)
   metadata <- rbind(metadata, new_metadata_rows)
+  # transform all columns to character
+  metadata <- metadata %>% mutate_all(as.character) %>% as.data.frame()
+  rownames(metadata) <- metadata$file
 
   return(list(corrected_data = corrected_data, metadata = metadata))
 }

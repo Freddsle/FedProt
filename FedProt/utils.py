@@ -57,6 +57,12 @@ def filter_features_na_rate(list_of_na_counts_tuples, max_na_rate=0.8):
     return sorted(keep_proteins)
 
 
+def aggregate_medians(avg_medians, total_samples):
+    # Weighted Mean of medians
+    weighted_sum = np.sum(np.array(avg_medians) * np.array(list(total_samples.values())))
+    global_median_mean = weighted_sum / sum(total_samples.values())
+    return global_median_mean
+
 # aggragate XtX and XtX
 def aggregate_XtX_XtY(list_of_xt_lists, n, k, used_SMPC):
     

@@ -8,7 +8,6 @@ logging.basicConfig(
 
 EXPERIMENT_TYPE = "TMT"
 SAMPLE_TYPE = "sample_type"
-TMT_PLEX = "TMT-plex"
 REF_SAMPLE = "ref"
 
 
@@ -21,16 +20,30 @@ class Client:
         annotation_file_path,
         experiment_type=EXPERIMENT_TYPE,
         log_transformed=False,
+        ref_type=None,
+        plex_column=None,
+        target_classes=None,
     ):
         self.experiment_type = experiment_type
-        self.tmt_names = None if self.experiment_type == EXPERIMENT_TYPE else None
         self.cohort_name = cohort_name
         self.intensities = None
         self.design = None
         self.prot_names = None
         self.sample_names = None
 
+        self.target_classes = target_classes
+        
         self.variables = None
+
+        if self.experiment_type == EXPERIMENT_TYPE:
+            self.ref_type = ref_type
+            self.tmt_names = None
+            if self.ref_type != "in_silico_reference":
+                self.plex_column = "TMT-plex"
+            else:
+                self.plex_column = plex_column       
+                
+        self.log_transformed = log_transformed     
 
         # df for filters
         self.counts = None
@@ -38,8 +51,7 @@ class Client:
 
         if not self.open_dataset(intensities_file_path, 
                                  count_file_path, 
-                                 annotation_file_path, 
-                                 log_transformed=log_transformed):
+                                 annotation_file_path):
             raise Exception("Failed to open dataset")
 
         self.XtX = None
@@ -49,7 +61,7 @@ class Client:
         self.fitted_logcounts = None
         self.mu = None
 
-    def open_dataset(self, intensities_file_path, count_file_path, design_file_path, count_pep_file_path=None, log_transformed=False):
+    def open_dataset(self, intensities_file_path, count_file_path, design_file_path, count_pep_file_path=None, ):
         """
         For LFQ-data:
         Reads data and design matrices and ensures that sample names are the same.
@@ -57,12 +69,11 @@ class Client:
 
         For TMT-data:
         Reads data and design matrices and ensures that sample names are the same,
-        each TMT-plex has at least one reference sample. Excludes proteins detected in less than 'min_f' plexes.
         Log2(x+1) transforms intensities.
         """
         self.read_files(intensities_file_path, count_file_path, design_file_path, count_pep_file_path)
 
-        if not self.process_files(log_transformed=log_transformed):
+        if not self.process_files():
             logging.error(f"Client {self.cohort_name}: Failed to process files.")
             return False
         
@@ -102,22 +113,26 @@ class Client:
                 self.pep_counts = pd.read_csv(count_pep_file_path, sep="\t")
         self.design = pd.read_csv(design_file_path, sep="\t", index_col=0)
 
-    def process_files(self, log_transformed=False):
+    def process_files(self):
         """Process the loaded data based on experiment type."""
         if self.experiment_type == EXPERIMENT_TYPE:
-            if not SAMPLE_TYPE in self.design.columns:
+            if not SAMPLE_TYPE in self.design.columns and self.ref_type != "in_silico_reference":
                 logging.error(f"Client {self.cohort_name}: Design matrix does not contain '{SAMPLE_TYPE}' column.")
                 return False
             if not self.process_tmt_files():
                 return False
 
         # if intensities not log2 transformed
-        # TODO: ADD filter ot parameter!
-        if not log_transformed:
-            self.intensities = np.log2(self.intensities + 1)        
+        if not self.log_transformed and self.experiment_type != EXPERIMENT_TYPE:
+            self.intensities = np.log2(self.intensities + 1)
+            self.log_transformed = True
             logging.info(f"Client {self.cohort_name}: Log2(x+1) transformed intensities.")
-        else:
+        elif self.experiment_type == EXPERIMENT_TYPE and not self.log_transformed:
+            logging.info(f"Client {self.cohort_name}: TMT data will be log2 transformed after normalization.") 
+        elif self.log_transformed:
             logging.info(f"Client {self.cohort_name}: Intensities are already log2 transformed.")
+        else:
+            logging.error(f"Client {self.cohort_name}: Failed to transform intensities.")
         
         return True
     
@@ -140,39 +155,59 @@ class Client:
         self.intensities = self.intensities.loc[:, self.sample_names]
         self.n_samples = len(self.sample_names)
 
+        # remove samples that are not belong to any of target classes
+        if self.target_classes:
+            self.design = self.design.loc[self.design[self.target_classes].sum(axis=1) > 0, :]
+            self.sample_names = list(self.design.index.values)
+            self.intensities = self.intensities.loc[:, self.sample_names]
+            self.n_samples = len(self.sample_names)
+            logging.info(f"Client {self.cohort_name}: Samples are filtered based on target classes.")
+            logging.info(f"Client {self.cohort_name}: {self.n_samples} samples are kept.")
+
     def process_tmt_files(self):
         """Validate and process the TMT files."""
         self.validate_tmt_files()
 
-        for tmt in self.tmt_names:
-            if REF_SAMPLE not in self.design.loc[self.design[TMT_PLEX] == tmt, SAMPLE_TYPE].values:
-                logging.error(
-                    f"Client {self.cohort_name}: No reference sample found in TMT-plex {tmt}. All samples will be excluded."
-                )
-                self.tmt_names.discard(tmt)
+        if self.ref_type != "in_silico_reference":
+            for tmt in self.tmt_names:
+                if REF_SAMPLE not in self.design.loc[self.design[self.plex_column] == tmt, SAMPLE_TYPE].values:
+                    logging.error(
+                        f"Client {self.cohort_name}: No reference sample found in TMT-plex {tmt}. All samples will be excluded."
+                    )
+                    self.tmt_names.discard(tmt)
 
-        self.counts = self.counts.loc[:, self.tmt_names]
-        self.design = self.design.loc[self.design[TMT_PLEX].isin(self.tmt_names), :]
+            self.counts = self.counts.loc[:, self.tmt_names]
+            self.design = self.design.loc[self.design[self.plex_column].isin(self.tmt_names), :]
+        
+        logging.info(f"Client {self.cohort_name}: TMT data loaded successfully.")
+        return True
 
     def validate_tmt_files(self):
         """
         Validates the TMT files.
         """
-        if TMT_PLEX not in self.design.columns:
-            logging.error(f"Client {self.cohort_name}: Design matrix does not contain '{TMT_PLEX}' column.")
+        if self.plex_column not in self.design.columns:
+            logging.error(f"Client {self.cohort_name}: Design matrix does not contain '{self.plex_column}' column.")
             return
+        logging.info(f"Client {self.cohort_name}: Using TMT-plex column '{self.plex_column}'.")
 
-        self.design[TMT_PLEX] = self.design[TMT_PLEX].apply(lambda x: str(x) + "_" + self.cohort_name)
-        self.counts.rename(lambda x: str(x) + "_" + self.cohort_name, axis="columns", inplace=True)
-        self.tmt_names = set(self.design[TMT_PLEX].values)
+        if self.ref_type != "in_silico_reference":
+            self.design[self.plex_column] = self.design[self.plex_column].apply(lambda x: str(x) + "_" + self.cohort_name)
+            self.counts.rename(lambda x: str(x) + "_" + self.cohort_name, axis="columns", inplace=True)
+            self.tmt_names = set(self.design[self.plex_column].values)
+            if not set(self.counts.columns.values) == self.tmt_names:
+                shared_tmt_plexes = set(self.counts.columns.values).intersection(self.tmt_names)
+                logging.error(
+                    f"Client {self.cohort_name}: Only {len(shared_tmt_plexes)} TMT-plexes are shared between design matrix and count table."
+                )
+                self.tmt_names = shared_tmt_plexes
+        else:
+            self.tmt_names = set(self.design[self.plex_column].values)
 
-        if not set(self.counts.columns.values) == self.tmt_names:
-            shared_tmt_plexes = set(self.counts.columns.values).intersection(self.tmt_names)
-            logging.error(
-                f"Client {self.cohort_name}: Only {len(shared_tmt_plexes)} TMT-plexes are shared between design matrix and count table."
-            )
-            self.tmt_names = shared_tmt_plexes
         self.tmt_names = sorted(list(self.tmt_names))
+        logging.info(f"Client {self.cohort_name}: Found {len(self.tmt_names)} TMT-plexes. Plexes: {self.tmt_names}")
+        
+        return True
 
     def validate_inputs(self, stored_features, variables):
         """
@@ -184,7 +219,7 @@ class Client:
         self.validate_protein_names(stored_features)
         self.validate_variables(variables)
         logging.info(
-            f"Client {self.cohort_name}: Validated {len(self.sample_names)} samples and {len(self.prot_names)} proteins."
+            f"Client {self.cohort_name}:\tValidated {len(self.sample_names)} samples and {len(self.prot_names)} proteins."
         )
 
     def validate_protein_names(self, stored_features):
@@ -193,7 +228,6 @@ class Client:
         """
         global_prots = set(stored_features)
         self_prots = set(self.prot_names).intersection(global_prots)
-        #self_prots = set(self.prot_names)
         
         if len(self_prots) != len(set(self_prots)):
             logging.info("Client %s:\tDuplicate protein names found." % self.cohort_name)
@@ -220,9 +254,12 @@ class Client:
         self.intensities = self.intensities.loc[self.prot_names, :]
         if self.use_counts:
             self.counts = self.counts.loc[self.prot_names, :]
+        
+        logging.info(f"Client {self.cohort_name}:\tProtein groups are validated.")
 
     def validate_variables(self, variables):
         """ensure that design matrix contains all variables"""
+
         self_variables = set(self.design.columns)
 
         if self_variables != set(variables):
@@ -233,63 +270,45 @@ class Client:
                 )
 
             extra_variables = self_variables.difference(set(variables))
-
             if len(extra_variables) > 0:
                 logging.info(
-                    "Client %s:\t%s columns are excluded from the design matrix:" % (self.cohort_name, len(extra_variables))
+                    f"Client {self.cohort_name}:\t{len(extra_variables)} columns are excluded from the design matrix: {extra_variables}"
                 )
 
             # keep only necessary columns in the design matrix
             if self.experiment_type == EXPERIMENT_TYPE:
-                self.design = self.design.loc[:, variables + [TMT_PLEX, SAMPLE_TYPE]]
+                if self.ref_type != "in_silico_reference":
+                    self.design = self.design.loc[:, variables + [self.plex_column, SAMPLE_TYPE]]
+                else:
+                    self.design = self.design.loc[:, variables + [self.plex_column]]
             else:
                 self.design = self.design.loc[:, variables]
 
         # find how many TMT detect each protein group
-        if self.experiment_type == EXPERIMENT_TYPE:
+        if self.experiment_type == EXPERIMENT_TYPE and self.ref_type != "in_silico_reference":
             self.n_tmt_per_prot = self.n_tmt - self.counts.isna().sum(axis=1)
-        
-    
-    def add_cohort_effects_to_design(self, cohorts):
+
+    def add_cohort_effects_to_design(self, cohorts, plex_covariate=False):
         """add covariates to model cohort effects."""
-        for cohort in cohorts:
-            if self.cohort_name == cohort:
-                self.design[cohort] = 1
-            else:
-                self.design[cohort] = 0
+        logging.info(f"Client {self.cohort_name}:\tAdding cohort effects to the design matrix.")
 
-    ######## Median Centering ###########
-    def compute_medians(self):
-        # computes and stores sample medians and returns their average
-        self.sample_medians = self.intensities.median()
-        return np.mean(self.sample_medians)
+        if self.experiment_type == EXPERIMENT_TYPE and plex_covariate:
+            logging.info(f"Client {self.cohort_name}:\tAdding TMT-plex as a covariate.")
+            # use cohort as plex covariate list, check using self.plex_column
+            for cohort in cohorts:
+                # for each row in design check value of plex column,
+                # if it is equal to cohort, set 1, otherwise 0
+                self.design[cohort] = self.design[self.plex_column].apply(lambda x: 1 if x == cohort else 0)
+    
+        else:
+            logging.info(f"Client {self.cohort_name}:\tAdding cohort as a covariate.")
+            for cohort in cohorts:
+                if self.cohort_name == cohort:
+                    self.design[cohort] = 1
+                else:
+                    self.design[cohort] = 0
 
-    def median_centering(self, global_median):
-        # R: sweep(log2(df.intensities+1), 2, sample_medians-global_median)
-        self.intensities = self.intensities - self.sample_medians + global_median
-
-    def count_leq_gt_samples(self, x):
-        # leq - less or eqal x ;
-        leq = self.intensities[self.intensities <= x].count().sum()
-        # gt - grater than x
-        gt = self.intensities[self.intensities > x].count().sum()
-        return leq, gt
-
-    ######### Row shift ##################
-    def get_sum_refs(self):
-        refs = list(self.design.loc[self.design[SAMPLE_TYPE] == REF_SAMPLE, :].index.values)
-        return self.intensities.loc[:, refs].sum(axis=1)
-
-    def apply_rs(self, avg_ref_global):
-        norm_intensities = []
-        for tmt_plex in self.tmt_names:
-            d = self.design.loc[self.design[TMT_PLEX] == tmt_plex, :]
-            tmt_samples = self.intensities.loc[:, d.index.values]
-            refs = d.loc[d[SAMPLE_TYPE] == REF_SAMPLE, :].index.values
-            avg_ref = self.intensities.loc[:, refs].mean(axis=1)
-            norm_intensities.append(tmt_samples.subtract(avg_ref - avg_ref_global, axis=0))
-        norm_intensities = pd.concat(norm_intensities, axis=1)
-        self.intensities = norm_intensities.loc[:, self.design.index.values]
+        logging.info(f"Client {self.cohort_name}:\tCohort effects are added to the design matrix.")
 
     ######### Filtering ##################
     def remove_single_pept_prots(self):
@@ -301,7 +320,7 @@ class Client:
 
         if self.experiment_type == EXPERIMENT_TYPE:
             for tmt in self.counts.columns.values:
-                samples = self.design.loc[self.design[TMT_PLEX] == tmt, :].index.values
+                samples = self.design.loc[self.design[self.plex_column] == tmt, :].index.values
                 failed_prots = self.counts[tmt][self.counts[tmt] <= 1].index.values
                 # replace internsities with NA
                 self.intensities.loc[failed_prots, samples] = np.NaN
@@ -328,14 +347,14 @@ class Client:
         intensities = self.intensities
         design = self.design
 
-        if self.experiment_type == EXPERIMENT_TYPE:
+        if self.experiment_type == EXPERIMENT_TYPE and self.ref_type != "in_silico_reference":
             samples = design.loc[design[SAMPLE_TYPE] == sample_type, :].index.values
             intensities = intensities.loc[:, samples]
             design = design.loc[samples, :]
             not_detected_in_tmt = {}
 
-            for tmt in set(design[TMT_PLEX].values):
-                tmt_samples = design.loc[design[TMT_PLEX] == tmt, :].index.values
+            for tmt in set(design[self.plex_column].values):
+                tmt_samples = design.loc[design[self.plex_column] == tmt, :].index.values
                 na_fraction = intensities.loc[:, tmt_samples].isna().sum(axis=1) * 1.0 / len(tmt_samples)
                 # mark 1 peptides not detected in TMT
                 not_found = na_fraction
@@ -344,28 +363,45 @@ class Client:
 
             not_detected_in_tmt = pd.DataFrame.from_dict(not_detected_in_tmt)
             return not_detected_in_tmt
+        
+        if self.experiment_type == EXPERIMENT_TYPE and self.ref_type == "in_silico_reference":
+            # remove proteins that are not detected in any of the pools
+            samples = design.index.values
+            intensities = intensities.loc[:, samples]
+            design = design.loc[samples, :]
 
-        else:
-            na_count_in_variable = pd.DataFrame(index=self.intensities.index.values, columns=self.variables)
-            samples_per_class = {}
+            valid_rows = pd.Series(True, index=intensities.index)
 
-            for variable in self.variables:
-                samples = design.loc[design[variable] == 1, :].index.values
-                tmp_intensities = intensities.loc[:, samples]
-                # na_fraction = tmp_intensities.isna().sum(axis=1) * 1.0 / len(samples)
-                na_count = tmp_intensities.isna().sum(axis=1)
-                na_count_in_variable[variable] = na_count
+            for tmt in set(design['Pool'].values):
+                tmt_samples = design.loc[design['Pool'] == tmt, :].index.values
+                # Check if each row has at least one non-NA value in the current plex samples
+                valid_rows &= intensities[tmt_samples].notna().any(axis=1)
 
-                # add the number of samples per class
-                samples_per_class[variable] = len(samples)
+            logging.info(f"Client {self.cohort_name}:\tProtein groups not detected in all of the TMT-plexes will be excluded: {intensities.shape[0] - valid_rows.sum()}")
+            self.intensities = intensities.loc[valid_rows]
 
-            return na_count_in_variable, samples_per_class
+        na_count_in_variable = pd.DataFrame(index=self.intensities.index.values, columns=self.variables)
+        samples_per_class = {}
 
-    def apply_filters(self, min_f=0.5, remove_single_peptide_prots=False, sample_type="sample"):
+        for variable in self.variables:
+            samples = design.loc[design[variable] == 1, :].index.values
+            tmp_intensities = intensities.loc[:, samples]
+            # na_fraction = tmp_intensities.isna().sum(axis=1) * 1.0 / len(samples)
+            na_count = tmp_intensities.isna().sum(axis=1)
+            na_count_in_variable[variable] = na_count
+
+            # add the number of samples per class
+            samples_per_class[variable] = len(samples)
+
+        return na_count_in_variable, samples_per_class
+
+    def apply_filters(self, min_f=0.5, remove_single_peptide_prots=False):
+        sample_type = SAMPLE_TYPE
+
         if remove_single_peptide_prots:
             self.remove_single_pept_prots()
 
-        if self.experiment_type == EXPERIMENT_TYPE:
+        if self.experiment_type == EXPERIMENT_TYPE and self.ref_type != "in_silico_reference":
             # marks proteins not detected in refs
             # not_detected_in_refs = self.is_all_na(sample_type="ref")
 
@@ -375,17 +411,15 @@ class Client:
             not_detected[not_detected > 0] = 1
             not_detected = not_detected.sum(axis=1) / not_detected.shape[1]
             passed_prots = not_detected[not_detected <= min_f].index.values
-
             logging.info(
                 f"Client {self.cohort_name}:\tProtein groups detected in less than {min_f} of all TMT-plexes will be excluded: {self.counts.shape[0] - len(passed_prots)}"
-            )
-            
-            return self.prot_names
+            )            
+            return self.prot_names            
         
         else:           
             na_count_in_variable, samples_per_class = self.is_all_na(sample_type)
             logging.info(
-                f"Client {self.cohort_name}:\tProtein groups detected in less than {min_f} of each target class will be excluded:"
+                f"Client {self.cohort_name}:\tProtein groups detected in less than {min_f} of each target class will be excluded."
             )    
             return na_count_in_variable, samples_per_class
 
@@ -405,14 +439,133 @@ class Client:
         logging.info(f'Samples in {self.cohort_name} data: {len(self.sample_names)}, protein groups: {len(self.prot_names)}')
 
 
+    ######## Median Centering ###########
+    def compute_medians(self):
+        # computes and stores sample medians and returns their average
+        self.sample_medians = self.intensities.median()
+        return np.mean(self.sample_medians)
+
+    def mean_median_centering(self, global_mean_median):
+        # Based on weighted mean of samples medians
+        self.intensities = self.intensities / self.sample_medians
+        self.intensities = self.intensities * global_mean_median
+        logging.info(f"Client {self.cohort_name}:\tMedian centering is applied.")
+
+    # different version
+    def median_centering(self, global_median):
+        # R: sweep(log2(df.intensities+1), 2, sample_medians-global_median)
+        self.intensities = self.intensities - self.sample_medians + global_median
+
+    def count_leq_gt_samples(self, x):
+        # leq - less or eqal x ;
+        leq = self.intensities[self.intensities <= x].count().sum()
+        # gt - grater than x
+        gt = self.intensities[self.intensities > x].count().sum()
+        return leq, gt
+
+    ######### Row shift ##################
+    def get_sum_refs(self):
+        refs = list(self.design.loc[self.design[SAMPLE_TYPE] == REF_SAMPLE, :].index.values)
+        return self.intensities.loc[:, refs].sum(axis=1)
+
+    def apply_rs(self, avg_ref_global):
+        norm_intensities = []
+        for tmt_plex in self.tmt_names:
+            d = self.design.loc[self.design[self.plex_column] == tmt_plex, :]
+            tmt_samples = self.intensities.loc[:, d.index.values]
+            refs = d.loc[d[SAMPLE_TYPE] == REF_SAMPLE, :].index.values
+            avg_ref = self.intensities.loc[:, refs].mean(axis=1)
+            norm_intensities.append(tmt_samples.subtract(avg_ref - avg_ref_global, axis=0))
+        norm_intensities = pd.concat(norm_intensities, axis=1)
+        self.intensities = norm_intensities.loc[:, self.design.index.values]
+
+    ######### IRS with in silico reference #########
+
+    def get_samples(self, pool):
+        # get samples for a pool        
+        filtered_samples = self.design[self.design[self.plex_column] == pool].index.values.astype(str).tolist()
+        return filtered_samples
+
+    def aggregate_data(self, data, method="average"):
+        # Aggregate data based on the method
+        if method == "average":
+            return data.mean(axis=1, skipna=True)
+        else:
+            return data.sum(axis=1, skipna=True)
+
+    def calculate_geometric_mean(self, irs):
+        def geometric_mean(x):
+            non_zero_values = x[x > 0]  # Exclude zeros from the computation
+            if len(non_zero_values) == 0:
+                return np.nan
+            return np.exp(np.mean(np.log(non_zero_values)))
+
+        geometric_means = irs.apply(geometric_mean, axis=1)
+        return geometric_means
+
+    def irsNorm_in_silico_single_center(self, aggregation_method="average"):
+        # Initialize IRS table
+        logging.info(f"Client {self.cohort_name}:\tIRS normalization with in silico reference.")
+        irs = pd.DataFrame()
+
+        # Process each pool to create IRS references
+        pools = self.design[self.plex_column].unique()
+        if len(pools) < 2:
+            logging.info(f"Client {self.cohort_name}:\tOnly one pool found. IRS normalization is not applied.")
+            return
+        
+        logging.info(f"Client {self.cohort_name}:\tFound {len(pools)} pools.")
+        for pool in pools:
+            samples = self.get_samples(pool)
+
+            if not all(sample in self.intensities.columns for sample in samples):
+                logging.error(f"Client {self.cohort_name}:\tSome samples for pool {pool} are missing in the data columns.")
+                raise ValueError(f"Some samples for pool {pool} are missing in the data columns.")
+            
+            data = self.intensities[samples].copy()
+            processed_data = self.aggregate_data(data, aggregation_method)
+            irs[pool] = processed_data
+
+        # Compute geometric mean across all IRS references
+        irs_average = self.calculate_geometric_mean(irs)
+
+        # Calculate scaling factors and normalize the self.intensities
+        corrected_data = self.intensities.copy()
+        
+        for pool in pools:
+            scaling_factor = irs_average / irs[pool]
+            scaling_factor.replace([np.inf, -np.inf], np.nan, inplace=True)
+            scaling_factor.fillna(1, inplace=True)
+            pool_samples = self.get_samples(pool)
+
+            if not all(sample in corrected_data.columns for sample in pool_samples):
+                raise ValueError(f"Some samples for pool {pool} are missing in the corrected data columns.")
+
+            corrected_data[pool_samples] = corrected_data[pool_samples].multiply(scaling_factor, axis=0)
+
+        self.intensities = corrected_data
+        logging.info(f"Client {self.cohort_name}:\tIRS normalization is applied.")
+
+        return 
+
+    ######### limma: preparation step #########
     def prepare_for_limma(self, stored_features):
         # remove unnecessary columns from the design matrix
         if self.experiment_type == EXPERIMENT_TYPE:
-            self.design = self.design.loc[self.design[SAMPLE_TYPE] == SAMPLE_TYPE, :]
-            self.design = self.design.drop(columns=[TMT_PLEX, SAMPLE_TYPE])
-        else:
-            self.prot_names = stored_features
-    
+            if self.ref_type != "in_silico_reference":
+                self.design = self.design.loc[self.design[SAMPLE_TYPE] == SAMPLE_TYPE, :]
+                self.design = self.design.drop(columns=[self.plex_column, SAMPLE_TYPE])
+            
+            else:
+                self.design = self.design.drop(columns=[self.plex_column])
+                logging.info(f"Client {self.cohort_name}:\tPlex column is removed from the design matrix.")
+
+            if not self.log_transformed:
+                self.intensities = np.log2(self.intensities + 1)
+                self.log_transformed = True
+                logging.info(f"Client {self.cohort_name}:\tLog2(x+1) transformed intensities.")
+
+        self.prot_names = stored_features
         self.sample_names = self.design.index.values
         self.intensities = self.intensities.loc[self.prot_names, self.sample_names]
         self.n_samples = len(self.sample_names)
