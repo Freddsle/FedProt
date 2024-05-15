@@ -442,7 +442,7 @@ class Client:
     ######## Median Centering ###########
     def compute_medians(self):
         # computes and stores sample medians and returns their average
-        self.sample_medians = self.intensities.median()
+        self.sample_medians = self.intensities.median(skipna=True)
         return np.mean(self.sample_medians)
 
     def mean_median_centering(self, global_mean_median):

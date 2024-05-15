@@ -14,8 +14,8 @@ filter_na_proteins <- function(dt, meta_data, quantitative_column_name) {
     return(dt)
 }
 
-filter_per_center <- function(intensities, metadata, quantitative_column_name, centers, center_column_name) {
-  cat('Filtering by center - two not-NA per center\n')
+filter_per_center <- function(intensities, metadata, quantitative_column_name, centers, center_column_name, min_number=2) {
+  cat('Filtering by', center_column_name, ' - ', min_number, ' not-NA per ', center_column_name, '\n')
   cat('\tBefore filtering:', dim(intensities), "\n")
   
   # Initialize a list to store the sample indices for each center
@@ -27,7 +27,7 @@ filter_per_center <- function(intensities, metadata, quantitative_column_name, c
   }
   # Determine rows with at least 2 non-NA values across each center's samples
   conditions <- sapply(center_samples, function(samples) {
-    rowSums(!is.na(intensities[, samples, drop = FALSE])) >= 2
+    rowSums(!is.na(intensities[, samples, drop = FALSE])) >= min_number
   })
   # Filter intensities where all conditions across centers are met
   filtered_intensities <- intensities[rowSums(conditions) == length(centers), ]
@@ -155,7 +155,7 @@ calculate_geometric_mean <- function(irs) {
 irsNorm_in_silico_single_center <- function(data, metadata, pool_col = "Pool",
                                             column_name = "file",
                                             center = NULL,
-                                            aggregation_method = "average") {
+                                            aggregation_method = "average", add_refs=TRUE) {
   # Initialize IRS table
   irs <- tibble()
 
@@ -164,7 +164,9 @@ irsNorm_in_silico_single_center <- function(data, metadata, pool_col = "Pool",
   for (pool in pools) {
     samples <- get_samples(metadata, pool, column_name)
     intensities <- data[, samples]
+    cat("Shape of intensities for pool ", pool, ":", dim(intensities), "\n")
     processed_data <- aggregate_data(intensities, aggregation_method)
+    
     if (ncol(irs) == 0) {
         irs <- tibble(!!pool := processed_data)  
     } else {
@@ -176,31 +178,46 @@ irsNorm_in_silico_single_center <- function(data, metadata, pool_col = "Pool",
   irs_average <- calculate_geometric_mean(irs)
 
   # Calculate scaling factors and normalize the data
-  corrected_data <- cbind(data, irs)  # Starting with original data to apply corrections
+  if (add_refs) {
+    corrected_data <- cbind(data, irs)
+  } else {
+    corrected_data <- cbind(data)
+  }
   for (pool in pools) {
     scaling_factor <- irs_average / irs[[pool]]
     scaling_factor[is.na(scaling_factor) | is.infinite(scaling_factor)] <- 1 
-    pool_samples <- c(get_samples(metadata, pool, column_name), pool)
+    if (add_refs){
+      pool_samples <- c(get_samples(metadata, pool, column_name), pool)
+    } else {
+      pool_samples <- get_samples(metadata, pool, column_name)
+    }
     corrected_data[, pool_samples] <- corrected_data[, pool_samples] * scaling_factor
   }
 
-  # update metadata with IRS column names
-  template <- setNames(as.list(rep("NA", ncol(metadata))), names(metadata))
+  if(add_refs) {
+    # update metadata with IRS column names
+    template <- setNames(as.list(rep("NA", ncol(metadata))), names(metadata))
 
-  new_metadata_rows <- do.call(rbind, lapply(pools, function(pool) {
-    condition_value <- "in_silico"
-    new_row <- template
-    new_row$Pool <- pool
-    new_row$file <- pool
-    new_row$condition <- condition_value
-    new_row$lab <- center
-    return(new_row)
-  }))
-  metadata <- metadata %>% mutate_all(as.character)
-  metadata <- rbind(metadata, new_metadata_rows)
-  # transform all columns to character
-  metadata <- metadata %>% mutate_all(as.character) %>% as.data.frame()
-  rownames(metadata) <- metadata$file
+    new_metadata_rows <- do.call(rbind, lapply(pools, function(pool) {
+      condition_value <- "in_silico"
+      new_row <- template
+      new_row$Pool <- pool
+      new_row$file <- pool
+      new_row$condition <- condition_value
+      new_row$lab <- center
+      return(new_row)
+    }))
+    metadata <- metadata %>% mutate_all(as.character)
+    metadata <- rbind(metadata, new_metadata_rows)
+    # transform all columns to character
+    metadata <- metadata %>% mutate_all(as.character) %>% as.data.frame()
+    rownames(metadata) <- metadata$file
 
-  return(list(corrected_data = corrected_data, metadata = metadata))
+    return(list(corrected_data = corrected_data, metadata = metadata))
+    
+  } else {
+    return(list(corrected_data = corrected_data)
+    )
+  }
+
 }

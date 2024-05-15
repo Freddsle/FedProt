@@ -154,6 +154,11 @@ keep_proteins = utils.filter_features_na_rate(list_of_na_counts_tuples, max_na_r
 logging.info(f"SERVER: Proteins after filtering: {len(keep_proteins)}")
 
 
+# CLIENT SIDE
+for c in cohorts:
+    client = store_clients[c]
+    client.update_prot_names(keep_proteins)
+
 # Normalize intensities
 
 # CLIENT SIDE
@@ -186,7 +191,6 @@ XtX_XtY_list = []
 
 for c in cohorts:
     client = store_clients[c]
-    client.update_prot_names(keep_proteins)
 
     logging.info("Start computing XtX and XtY")
     client.prepare_for_limma(keep_proteins)
