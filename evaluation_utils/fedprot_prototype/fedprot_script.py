@@ -62,6 +62,9 @@ if experiment_type == "TMT":
 
     use_median = config["fedprot"]["use_median"]
     use_irs = config["fedprot"]["use_irs"]
+else:
+    ref_type = None
+    plex_column = None
 
 remove_single_pep_protein = config["fedprot"]["remove_single_pep_protein"]
 target_classes = config["fedprot"]["target_classes"]
@@ -110,7 +113,9 @@ for cohort_name in cohorts:
     # add list (as list of lists) of protein names
     prot_names.append(client.prot_names)
 
-logging.info(f"Plexes: {plex_covariates_list}")
+if experiment_type == "TMT":
+    if plex_covariate:
+        plex_covariates_list = sorted(list(set(plex_covariates_list)))
 
 # SERVER SIDE
 prot_names = utils.get_common_proteins(prot_names)
@@ -130,7 +135,7 @@ for c in cohorts:
 
     # add cohort effect columns to each design matrix
     # if plex_covariate exists, use this column as a cohort effect
-    if plex_covariate:
+    if experiment_type == "TMT" and plex_covariate:
         client.add_cohort_effects_to_design(plex_covariates_list[1:], plex_covariate)
     else:
         client.add_cohort_effects_to_design(cohorts[1:])

@@ -284,14 +284,19 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
         rank_corrs = df[[what+"DEqMS"]+[what+m for m in methods]].corr(method="spearman").loc[[what+"DEqMS"],]
         rank_corrs.rename(lambda x: x.replace(what,""), axis="columns",inplace = True)
         rank_corrs = rank_corrs.T.to_dict()[what+'DEqMS']
+        # Calculate NRMSE
+        NRMSE = {}
+        for m in methods:
+            NRMSE[m] = rmse[m] / np.var(df[what+"DEqMS"].values)
+
 
         if add_table:
             # Prepare data for table
             data = {}
-            colLabels = ["r", "ρ"]
+            colLabels = ["r", "ρ", 'NRMSE']
 
             for j, method in enumerate(methods):
-                data[method] = [f"{round(corrs[method],3)}", f"{round(rank_corrs[method],3)}"]
+                data[method] = [f"{round(corrs[method],2)}", f"{round(rank_corrs[method],2)}", f"{round(NRMSE[method],2)}"]
                 
             # Create table for each axes
             the_table = table(
