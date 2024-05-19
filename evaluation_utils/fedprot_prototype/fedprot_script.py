@@ -1,5 +1,7 @@
 import logging
 import sys
+# for json files
+import json
 
 import pandas as pd
 import numpy as np
@@ -15,11 +17,23 @@ logging.basicConfig(
 
 
 try:
-    if len(sys.argv) > 1:
-        data_dir = str(sys.argv[1])
-        MODE = str(sys.argv[2])
-        cohorts = str(sys.argv[3]).split(",")
-        output_path = str(sys.argv[4])
+    sys_arguments = sys.argv
+    number_of_arguments = len(sys_arguments)
+    logging.info(f"Number of arguments: {number_of_arguments}")
+    
+    if number_of_arguments > 1:
+        data_dir = str(sys_arguments[1])
+        MODE = str(sys_arguments[2])
+        cohorts = str(sys_arguments[3]).split(",")
+        output_path = str(sys_arguments[4])
+    
+    # ONLY FOR EVALUATION
+    if number_of_arguments > 5:
+        keep_proteins_path = str(sys_arguments[5])
+        USE_PRE_FILTER = True
+    else:
+        USE_PRE_FILTER = False
+
     # else:
     #     # test data
     #     data_dir = "/home/yuliya/repos/cosybio/FedProt/data/bacterial_data/"
@@ -81,6 +95,9 @@ if experiment_type == "TMT":
     if plex_covariate:
         plex_covariates_list = []
 
+if use_counts:
+    list_of_counts = []
+
 # clinets are joining
 for cohort_name in cohorts:
     intensity_file_path = f"{data_dir}/{cohort_name}/{intensity_path}"
@@ -113,6 +130,12 @@ for cohort_name in cohorts:
     # add list (as list of lists) of protein names
     prot_names.append(client.prot_names)
 
+    if use_counts:
+        min_counts = client.get_min_count()
+        list_of_counts.append(min_counts.to_dict())
+        logging.info("Min counts have been computed...")
+
+
 if experiment_type == "TMT":
     if plex_covariate:
         plex_covariates_list = sorted(list(set(plex_covariates_list)))
@@ -122,10 +145,19 @@ prot_names = utils.get_common_proteins(prot_names)
 logging.info(f"SERVER: Common proteins: {len(prot_names)}")
 variables = target_classes + covariates
 
+if use_counts:
+    min_counts = list()
+    for local_counts in list_of_counts:
+        min_counts.append(pd.DataFrame.from_dict(local_counts, orient='index'))
+    global_min_counts = pd.concat(min_counts, axis=1)
+    global_min_counts = global_min_counts.min(axis=1)
+    global_min_counts = global_min_counts[prot_names]
+    logging.info("Min counts have been aggregated...")
+    logging.info(f"Size of global min counts: {global_min_counts.shape}")
+
 # CLIENT SIDE
 # validate inputs and add cohort effects
 # apply filters
-
 list_of_na_counts_tuples = []
 total_samples = {}
 
@@ -133,9 +165,12 @@ for c in cohorts:
     client = store_clients[c]
     client.validate_inputs(prot_names, variables)
 
+    if use_counts:
+        client.counts = global_min_counts[global_min_counts.index.isin(client.prot_names)]
+
     # add cohort effect columns to each design matrix
     # if plex_covariate exists, use this column as a cohort effect
-    if experiment_type == "TMT" and plex_covariate:
+    if plex_covariate:
         client.add_cohort_effects_to_design(plex_covariates_list[1:], plex_covariate)
     else:
         client.add_cohort_effects_to_design(cohorts[1:])
@@ -153,11 +188,30 @@ for c in cohorts:
     # add both as a tuple to the list
     list_of_na_counts_tuples.append((
         na_count_in_variable.to_dict(orient='index'), samples_per_class))
-    
+
+logging.info("CLIENT: Filters have been applied...")
+logging.info("Min counts have been computed...")
+
+
 # SERVER SIDE
 keep_proteins = utils.filter_features_na_rate(list_of_na_counts_tuples, max_na_rate)
 logging.info(f"SERVER: Proteins after filtering: {len(keep_proteins)}")
 
+
+# ONLY FOR EVALUATION
+if USE_PRE_FILTER:
+    # read keep_proteins from json file 
+    with open(keep_proteins_path, 'r') as file:
+        list_from_prefilter = json.load(file)
+
+    # add keep proteins to the json file
+    list_from_prefilter[MODE]["FedProt"] = keep_proteins
+    # write to the json file
+    with open(keep_proteins_path, 'w') as file:
+        json.dump(list_from_prefilter, file)
+    # -- the list of proteins to keep is in ["mode name"]["Meta"] inside json file
+    keep_proteins = list_from_prefilter[MODE]["meta"]
+    logging.info(f"SERVER: Proteins after filtering FOR EVALUATION: {len(keep_proteins)}")
 
 # CLIENT SIDE
 for c in cohorts:
@@ -291,25 +345,10 @@ if not use_counts:
     logging.info(f"Results have been saved to {output_file}")
     sys.exit(0)
 
-# CLIENT SIDE
-list_of_counts = []
-
-for c in cohorts:
-    client = store_clients[c]
-    min_counts = client.get_min_count()
-    list_of_counts.append(min_counts.to_dict())
-logging.info("Min counts have been computed...")
-
 # SERVER SIDE
 if use_counts:
-    min_counts = list()
-    for local_counts in list_of_counts:
-        min_counts.append(pd.DataFrame.from_dict(local_counts, orient='index'))
-    global_min_counts = pd.concat(min_counts, axis=1)
-    logging.info("Min counts have been aggregated...")
-    global_min_counts = global_min_counts.min(axis=1).loc[keep_proteins] + 1
+    global_min_counts = global_min_counts[keep_proteins] + 1
     logging.info(f"Size of global min counts: {global_min_counts.shape}")
-
     logging.info("Start spectral count eBayes stage...")
     results = utils.spectral_count_ebayes(
         results, 

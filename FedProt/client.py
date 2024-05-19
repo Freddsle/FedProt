@@ -313,32 +313,14 @@ class Client:
     ######### Filtering ##################
     def remove_single_pept_prots(self):
         """
-        Replaces with NA all intensities for proteins supported by a single peptide
+        Remove from intensities and counts proteins supported by just a single peptide.
         """
-        # TODO: need to be tested
-        n_pepts = self.counts.shape[0]
-
-        if self.experiment_type == EXPERIMENT_TYPE:
-            for tmt in self.counts.columns.values:
-                samples = self.design.loc[self.design[self.plex_column] == tmt, :].index.values
-                failed_prots = self.counts[tmt][self.counts[tmt] <= 1].index.values
-                # replace internsities with NA
-                self.intensities.loc[failed_prots, samples] = np.NaN
-                self.counts.loc[self.counts[tmt] <= 1] = np.NaN
-        else:
-            failed_prots = self.counts[self.counts <= 1].index.values
-            self.intensities.loc[failed_prots, :] = np.NaN
-            self.counts.loc[self.counts <= 1] = np.NaN
-
-        # drop lines with all NA and update the number of TMT plexes per protein
-        self.counts.dropna(axis=0, how="all", inplace=True)
-        self.intensities = self.intensities.loc[self.counts.index, :]
-
-        self.update_prot_names()
-
-        logging.info(
-            f"Client {self.cohort_name}:\tProteins supported by just a single peptide will be excluded: {n_pepts - self.counts.shape[0]}"
-        )
+        logging.info(f"Client {self.cohort_name}:\tProtein groups supported by a single peptide will be excluded.")
+        logging.info(f"Client {self.cohort_name}:\tProtein groups: {len(self.intensities.index)}")
+        proteins_passing_filter = self.counts[self.counts > 1].index
+        self.intensities = self.intensities.loc[proteins_passing_filter]
+        self.counts = self.counts[proteins_passing_filter]
+        logging.info(f"Client {self.cohort_name}:\tProtein groups after filter: {len(self.intensities.index)}")
 
     def is_all_na(self, sample_type="sample"):
         """
@@ -430,10 +412,10 @@ class Client:
         else:
             self.prot_names = passed_prots
             if self.use_counts:
-                self.counts = self.counts.loc[self.prot_names, :]
+                self.counts = self.counts[self.prot_names]
             self.intensities = self.intensities.loc[self.prot_names, self.design.index]
 
-        if self.experiment_type == EXPERIMENT_TYPE:
+        if self.experiment_type == EXPERIMENT_TYPE and self.ref_type != "in_silico_reference":
             self.n_tmt_per_prot = self.counts.notna().sum(axis=1)
 
         logging.info(f'Samples in {self.cohort_name} data: {len(self.sample_names)}, protein groups: {len(self.prot_names)}')
