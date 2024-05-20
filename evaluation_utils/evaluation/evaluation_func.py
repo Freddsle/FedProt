@@ -106,7 +106,8 @@ def calculate_rmse(df, methods, top_genes, column_name="pv_"):
         rmse = np.sqrt(np.sum((x - y) ** 2) / len(x))
 
         # calculate min max variant of RMSE
-        nrmse = rmse / np.var(x)
+        # nrmse = rmse / np.var(x)
+        nrmse = rmse / (np.max(x) - np.min(x))
         rmse_results[m] = {"RMSE": rmse, "NRMSE": nrmse}
 
     logging.info(f"RMSE and NRMSE computed for {'all' if top_genes == -1 else top_genes} genes from {column_name} columns.")
@@ -148,16 +149,19 @@ def calculate_performance_metrics(
         Rec = TP / (TP + FN) if (TP + FN) > 0 else 0
         F1 = 2 * (Prec * Rec) / (Prec + Rec) if Prec and Rec else 0
         MCC = (TP * TN - FP * FN) / np.sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+        Jaccard_i = len(T.intersection(P)) / len(T.union(P)) if len(T.union(P)) > 0 else 0
 
         results[m] = {"Number": len(T), "TP": TP, "FP": FP, "TN": TN, "FN": FN, 
-                      "Precision": Prec, "Recall": Rec, "F1": F1, "MCC": MCC}
+                      "Precision": Prec, "Recall": Rec, "F1": F1, "MCC": MCC, "Jaccard": Jaccard_i}
 
     logging.info(f"Performance metrics calculated for {'all' if top_genes == -1 else top_genes} genes.")
     return results
 
 
 def calc_stats(df_input, lfc_thr=1, adj_pval_thr=0.05,
-               stats=['Number', "TP", "TN", "FP", "FN", "Precision", "Recall", "F1", "MCC", 
+               stats=['Number', "TP", "TN", "FP", "FN", 
+                      "Precision", "Recall", "F1", "MCC", 
+                      "Jaccard"
                       "r", "ρ", "RMSE", 
                       "MeanDiff", "MaxDiff", "MinDiff"],
                methods=["FedProt", "Fisher", "Stouffer", "REM", "RankProd"],
@@ -174,7 +178,7 @@ def calc_stats(df_input, lfc_thr=1, adj_pval_thr=0.05,
     # create a dictionary to store the results
     results = {}
 
-    if any([s in stats for s in ["Number", "TP", "TN", "FP", "FN", "Precision", "Recall", "F1", "MCC"]]):
+    if any([s in stats for s in ["Number", "TP", "TN", "FP", "FN", "Precision", "Recall", "F1", "MCC", "Jaccard"]]):
         performance_resuts = calculate_performance_metrics(
             df_prepared, de, methods, lfc_thr, adjusted_pval_thr, top_genes, all_genes
         )
@@ -237,12 +241,15 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                 what="pv_", 
                 text="", dotsize=1,
                 datasets=["Balanced", "Imbalanced"],
-                add_table=True
+                add_table=True, sharey=True, sharex=True,
+                comparsions=["pyr/glu", "pyr/glu"],
+                use_RMSE=False,
+                figsize=(10,4.5)
     ):
     
     logging.basicConfig(level=logging.INFO, format='%(message)s')
 
-    fig, axes = plt.subplots(1, len(datasets), figsize=(10,4.5), sharey=False)
+    fig, axes = plt.subplots(1, len(datasets), figsize=figsize, sharey=sharey)
     i=0
     se = 0 
     results = {}
@@ -262,6 +269,7 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
         df = dfs[k].filter([f'{what}DEqMS']+[what+i for i in methods])
         axes[i].set_title(k, fontsize=16)
         rmse = {}
+        NRMSE = {}
         
         for j in range(len(methods)):
             method = methods[j]
@@ -269,14 +277,24 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
             x = df[what+"DEqMS"].values
             y = df[what+method].values
             rmse[method] = np.sqrt(np.sum((x-y)**2)/len(x))
+            NRMSE[method] = rmse[method] / (np.max(x) - np.min(x))
             axes[i].scatter(x = np.abs(x), y= np.abs(y),s=dotsize, color=col, alpha=0.5)
         
-        axes[i].set_xlabel(f'{suptitle} (pyr/glu), \nDEqMS',fontsize=12)
-        axes[i].set_ylabel(f'{suptitle} (pyr/glu), \nother methods',fontsize=12)
+        axes[i].set_xlabel(f'{suptitle} {comparsions[i]}, \nDEqMS',fontsize=12)
+        axes[i].set_ylabel(f'{suptitle} {comparsions[i]}, \nother methods',fontsize=12)
         axes[i].plot([np.min(np.abs(df.values)), np.max(np.abs(df.values))+5], 
                      [np.min(np.abs(df.values)), np.max(np.abs(df.values))+5],
                    color = "red",ls="--",lw=0.5)
-     
+        
+        if not sharex:
+            max_deqms = np.max(np.abs(df[what+"DEqMS"].values))
+            min_deqms = np.min(np.abs(df[what+"DEqMS"].values))
+            axes[i].set_xlim(min_deqms - max_deqms*0.01, max_deqms + max_deqms*0.1)
+
+            max_others = np.max(np.abs(df[[what+m for m in methods]].values))
+            min_others = np.min(np.abs(df[[what+m for m in methods]].values))
+            axes[i].set_ylim(min_others - max_others*0.01, max_others + max_others*0.1)
+
         # Calculate correlations
         corrs = df[[what+"DEqMS"]+[what+m for m in methods]].corr().loc[[what+"DEqMS"],]
         corrs.rename(lambda x: x.replace(what,""), axis="columns",inplace = True)
@@ -284,20 +302,27 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
         rank_corrs = df[[what+"DEqMS"]+[what+m for m in methods]].corr(method="spearman").loc[[what+"DEqMS"],]
         rank_corrs.rename(lambda x: x.replace(what,""), axis="columns",inplace = True)
         rank_corrs = rank_corrs.T.to_dict()[what+'DEqMS']
-        # Calculate NRMSE
-        NRMSE = {}
-        for m in methods:
-            NRMSE[m] = rmse[m] / np.var(df[what+"DEqMS"].values)
-
 
         if add_table:
             # Prepare data for table
             data = {}
-            colLabels = ["r", "ρ", 'NRMSE']
+            if use_RMSE:
+                colLabels = ["r", "ρ", 'NRMSE*']
+            else:
+                colLabels = ["r", "ρ"]
 
             for j, method in enumerate(methods):
-                data[method] = [f"{round(corrs[method],2)}", f"{round(rank_corrs[method],2)}", f"{round(NRMSE[method],2)}"]
-                
+                if use_RMSE:
+                    if what == "pv_":
+                        data[method] = [f"{round(corrs[method],3)}", f"{round(rank_corrs[method],3)}", f"{round(NRMSE[method],3)}"]
+                    elif what == "lfc_":
+                        data[method] = [f"{round(corrs[method],4)}", f"{round(rank_corrs[method],4)}", f"{round(NRMSE[method],3)}"]
+                else:
+                    if what == "pv_":
+                        data[method] = [f"{round(corrs[method],3)}", f"{round(rank_corrs[method],3)}"]
+                    elif what == "lfc_":
+                        data[method] = [f"{round(corrs[method],4)}", f"{round(rank_corrs[method],4)}"]
+
             # Create table for each axes
             the_table = table(
                 axes[i], 
@@ -321,18 +346,19 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                 else:
                     cell.get_text().set_color('black')
 
-        else:
+        else:               
             axes[i].legend(methods, loc='upper right', title='Methods', fontsize=10, markerscale=8, markerfirst=False)
             
 
         i += 1
         results[(k,"r")] = corrs
         results[(k,"ρ")] = rank_corrs
-        results[(k,"RMSE")] = pd.Series(rmse)
+        if use_RMSE:
+            results[(k,"NRMSE*")] = pd.Series(NRMSE)
 
         max_xlim_method = np.max(np.abs(df[what+"DEqMS"].values))
         if what == "pv_":
-            max_xlim_method = max_xlim_method + max_xlim_method*0.2
+            max_xlim_method = max_xlim_method + max_xlim_method*0.05
         else:
             max_xlim_method = max_xlim_method + max_xlim_method*0.05
         if max_xlim < max_xlim_method:
@@ -343,10 +369,10 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
 
         if min_xlim > min_xlin_method:
             min_xlim = min_xlin_method
-
-    
-    axes[0].set_xlim([min_xlim, max_xlim])
-    axes[1].set_xlim([min_xlim, max_xlim])
+            
+    if sharex:
+        for i in range(len(datasets)):
+            axes[i].set_xlim(min_xlim, max_xlim)
     
     results = pd.DataFrame.from_dict(results)
     
@@ -439,7 +465,13 @@ def plot_stats_for_topN(dfs,
             df = dfs[ds]
             df = df.sort_values(by="pv_DEqMS", ascending=False)
             stats = {}
-            top_n_genes = np.arange(min_n_genes, max_n_genes, step)
+            if isinstance(max_n_genes, list):
+                i_max = max_n_genes[i]
+                top_n_genes = np.arange(min_n_genes, i_max, step)
+            else:
+                i_max = max_n_genes
+                top_n_genes = np.arange(min_n_genes, i_max, step)
+
             for j in range(len(top_n_genes)):  #
                 confusion_matrix = calc_stats_TOP(df, 
                                                   stats=[metric],
@@ -457,7 +489,7 @@ def plot_stats_for_topN(dfs,
             if i == 0:
                 tmp = axes[i].set_ylabel(f"{metric}", fontsize=14)
                 if text:
-                    tmp = axes[0].text(-0.15 * max_n_genes, np.max(stats.values) * 1.0, text, fontsize=24)
+                    tmp = axes[0].text(-0.15 * i_max, np.max(stats.values) * 1.0, text, fontsize=24)
             if i > 0 or k != len(metrics) - 1:
                 axes[i].get_legend().remove()
             if k == 0:
@@ -485,9 +517,9 @@ def plot_stats_for_topN(dfs,
 
 def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
                         num_top_genes=range(5, 700, 5),
-                        figfile=""):
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4), sharey=sharey)
-    datasets = ["Balanced", "Imbalanced"]
+                        figfile="", figsize=(13, 4)):
+    fig, axes = plt.subplots(1, len(jaccard_dfs), figsize=figsize, sharey=sharey)
+    datasets = list(jaccard_dfs.keys())
 
     # Convert column names to integers to plot as numeric x-axis
     for k, df in jaccard_dfs.items():

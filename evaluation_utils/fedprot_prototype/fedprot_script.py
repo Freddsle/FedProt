@@ -170,8 +170,9 @@ for c in cohorts:
 
     # add cohort effect columns to each design matrix
     # if plex_covariate exists, use this column as a cohort effect
-    if plex_covariate:
-        client.add_cohort_effects_to_design(plex_covariates_list[1:], plex_covariate)
+    if experiment_type == "TMT":
+        if plex_covariate:
+            client.add_cohort_effects_to_design(plex_covariates_list[1:], plex_covariate)
     else:
         client.add_cohort_effects_to_design(cohorts[1:])
 
