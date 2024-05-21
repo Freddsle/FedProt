@@ -244,7 +244,7 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                 add_table=True, sharey=True, sharex=True,
                 comparsions=["pyr/glu", "pyr/glu"],
                 use_RMSE=False,
-                figsize=(10,4.5)
+                figsize=(10,4.5), after_comma=3
     ):
     
     logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -314,12 +314,12 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
             for j, method in enumerate(methods):
                 if use_RMSE:
                     if what == "pv_":
-                        data[method] = [f"{round(corrs[method],3)}", f"{round(rank_corrs[method],3)}", f"{round(NRMSE[method],3)}"]
+                        data[method] = [f"{round(corrs[method],after_comma)}", f"{round(rank_corrs[method],3)}", f"{round(NRMSE[method],3)}"]
                     elif what == "lfc_":
                         data[method] = [f"{round(corrs[method],4)}", f"{round(rank_corrs[method],4)}", f"{round(NRMSE[method],3)}"]
                 else:
                     if what == "pv_":
-                        data[method] = [f"{round(corrs[method],3)}", f"{round(rank_corrs[method],3)}"]
+                        data[method] = [f"{round(corrs[method],after_comma)}", f"{round(rank_corrs[method],after_comma)}"]
                     elif what == "lfc_":
                         data[method] = [f"{round(corrs[method],4)}", f"{round(rank_corrs[method],4)}"]
 
