@@ -359,8 +359,12 @@ class Client:
                 # Check if each row has at least one non-NA value in the current plex samples
                 valid_rows &= intensities[tmt_samples].notna().any(axis=1)
 
-            logging.info(f"Client {self.cohort_name}:\tProtein groups not detected in all of the TMT-plexes will be excluded: {intensities.shape[0] - valid_rows.sum()}")
-            self.intensities = intensities.loc[valid_rows]
+            if self.SKIP_POOLS:
+                logging.info(f"DEBUG: SKIPING POOL FILTERS")
+                pass
+            else:
+                logging.info(f"Client {self.cohort_name}:\tProtein groups not detected in all of the TMT-plexes will be excluded: {intensities.shape[0] - valid_rows.sum()}")
+                self.intensities = intensities.loc[valid_rows]
 
         na_count_in_variable = pd.DataFrame(index=self.intensities.index.values, columns=self.variables)
         samples_per_class = {}
@@ -558,25 +562,33 @@ class Client:
         Y = self.intensities.values  # Y - intensities (proteins x samples)
         n = Y.shape[0]  # genes
         k = self.design.shape[1]  # variables
+
         self.XtX = np.zeros((n, k, k))
         self.XtY = np.zeros((n, k))
 
+        mask_X = np.full((n, k), False, dtype=int)
+
         # linear models for each row
-        for i in range(0, n):  #
+        for i in range(0, n): 
             y = Y[i, :]
             # check NA in Y
             ndxs = np.argwhere(np.isfinite(y)).reshape(-1)
-            if len(ndxs) != len(y):
-                # remove NA from Y and from x
+            if len(ndxs) > 0: 
                 x = X[ndxs, :]
-                y = y[ndxs]
-            else:
-                x = X
-            self.XtX[i, :, :] = x.T @ x
-            self.XtY[i, :] = x.T @ y
-        return self.XtX, self.XtY
+            
+                column_variances = np.var(x, axis=0)
+                zero_var_mask = column_variances == 0
+                if np.any(zero_var_mask):
+                    mask_X[i, zero_var_mask] = 1
+                    # mask_X[i, :, zero_var_mask] = 1
 
-    def compute_SSE_and_cov_coef(self, beta):
+                y = y[ndxs]
+                self.XtX[i, :, :] = x.T @ x
+                self.XtY[i, :] = x.T @ y 
+                
+        return self.XtX, self.XtY, mask_X
+
+    def compute_SSE_and_cov_coef(self, beta, mask_glob):
         X = self.design.values
         Y = self.intensities.values
         n = Y.shape[0]
@@ -588,11 +600,14 @@ class Client:
             y = Y[i, :]
             # remove NA from Y and from x
             ndxs = np.argwhere(np.isfinite(y)).reshape(-1)
-            x = X[ndxs, :]
+            x = X[ndxs, ]
+            x = x[:, ~mask_glob[i]]
             y = y[ndxs]
-            self.mu[i, ndxs] = x @ beta[i, :]  # fitted Y
+            self.mu[i, ndxs] = x @ beta[i, ~mask_glob[i]]  # fitted Y
             self.SSE[i] = np.sum((y - self.mu[i, ndxs]) ** 2)  # local SSE
+        
         self.cov_coef = X.T @ X
+        
         return self.SSE, self.cov_coef
 
     def get_not_na(self):

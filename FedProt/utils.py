@@ -64,30 +64,38 @@ def aggregate_medians(avg_medians, total_samples):
     return global_median_mean
 
 # aggragate XtX and XtX
-def aggregate_XtX_XtY(list_of_xt_lists, n, k, used_SMPC):
+def aggregate_XtX_XtY(list_of_xt_lists, masks_lists_list, n, k, used_SMPC):
     
     XtX_glob = np.zeros((n, k, k))
     XtY_glob = np.zeros((n, k))
+    mask_glob = np.zeros((n, k))
+    
     # non-smpc case, need to aggregate
     XtX_list = list()
     XtY_list = list()
+    masks_list = list()
 
     if not used_SMPC:
         # non-smpc case, need to aggregate
         logging.info('SMPC is not used, aggregating XtX and XtY')       
-        for pair in list_of_xt_lists:
+        for i, pair in enumerate(list_of_xt_lists):
             XtX_list.append(pair[0])
             XtY_list.append(pair[1])
+            masks_list.append(masks_lists_list[i])
+
         for i in range(0, len(list_of_xt_lists)):
-            XtX_glob += XtX_list[i]
-            XtY_glob += XtY_list[i]   
+            XtX_glob += XtX_list[i] 
+            XtY_glob  += XtY_list[i]
+            mask_glob += masks_list[i]
     else:
         # smpc case, already aggregated
         XtX_XtY_list = list_of_xt_lists[0]
         XtX_glob += XtX_XtY_list[0]
         XtY_glob += XtX_XtY_list[1]
-    
-    return XtX_glob, XtY_glob
+        mask_glob = masks_lists_list[0]
+
+    mask_glob = mask_glob != 0
+    return XtX_glob, XtY_glob, mask_glob
 
 
 # compute beta for lmfit
@@ -98,7 +106,9 @@ def compute_beta_and_stdev(XtX_glob, XtY_glob, n, k):
     for i in range(0, n):
         if linalg.det(XtX_glob[i, :, :]) == 0:
             logging.warning(f"XtX is singular for protein {i}, determinant is 0.")
-        invXtX = linalg.inv(XtX_glob[i, :, :])
+            invXtX = linalg.pinv(XtX_glob[i, :, :])
+        else:
+            invXtX = linalg.inv(XtX_glob[i, :, :])
         beta[i, :] = invXtX @ XtY_glob[i, :]
         stdev_unscaled[i, :] = np.sqrt(np.diag(invXtX))
 
@@ -145,15 +155,15 @@ def aggregate_SSE_and_cov_coef(list_of_sse_cov_coef, n, k, used_smpc, number_of_
     return SSE, cov_coef, n_measurements, Amean
 
 # compute SSE and cov. coeficients
-def compute_SSE_and_cov_coef_global(cov_coef, SSE, Amean, n_measurements, n, k):
+def compute_SSE_and_cov_coef_global(cov_coef, SSE, Amean, n_measurements, n, mask_glob):
     # estimated covariance matrix of beta
     cov_coef = linalg.inv(cov_coef)
     # estimated residual variance
-    var = SSE / (n_measurements - k)
+    var = SSE / (n_measurements - (~mask_glob).sum(axis=1))
     # estimated residual standard deviations
     sigma = np.sqrt(var)
     # degrees of freedom
-    df_residual = np.ones(n) * (n_measurements - k)
+    df_residual = np.ones(n) * (n_measurements - (~mask_glob).sum(axis=1))
     # mean log-intensity
     Amean = Amean / n_measurements
 
