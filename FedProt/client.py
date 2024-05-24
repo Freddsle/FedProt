@@ -53,7 +53,8 @@ class Client:
                                  count_file_path, 
                                  annotation_file_path):
             raise Exception("Failed to open dataset")
-
+        
+        self.check_collinearity = False
         self.XtX = None
         self.XtY = None
         self.SSE = None
@@ -111,6 +112,7 @@ class Client:
             self.counts = pd.read_csv(count_file_path, sep="\t", index_col=0)
             if count_pep_file_path:
                 self.pep_counts = pd.read_csv(count_pep_file_path, sep="\t")
+
         self.design = pd.read_csv(design_file_path, sep="\t", index_col=0)
 
     def process_files(self):
@@ -121,6 +123,11 @@ class Client:
                 return False
             if not self.process_tmt_files():
                 return False
+        
+        # If any row contains only one non-NA value in a row, replace it with NA
+        logging.info(f"Client {self.cohort_name}: Replacing rows with only one non-NA value with NA.")
+        logging.info(f"Client {self.cohort_name}: Rows will be affected : {self.intensities.apply(lambda x: x.count() == 1, axis=1).sum()}")
+        self.intensities = self.intensities.apply(lambda x: x if x.count() > 1 else np.nan, axis=1)
 
         # if intensities not log2 transformed
         if not self.log_transformed and self.experiment_type != EXPERIMENT_TYPE:
@@ -204,6 +211,18 @@ class Client:
         else:
             self.tmt_names = set(self.design[self.plex_column].values)
 
+            # if any row has only one non-NA value inside TMT-plex, replace the value with NA
+            # for plexes
+            for tmt in self.tmt_names:
+                tmt_samples = self.design.loc[self.design[self.plex_column] == tmt, :].index.values
+                logging.info(f"Client {self.cohort_name}: Checking TMT-plex {tmt} for single non-NA values.")
+                affected_rows = self.intensities.loc[:, tmt_samples].apply(lambda x: x.count() == 1, axis=1).sum()
+                if affected_rows > 0:
+                    logging.info(f"Client {self.cohort_name}: Rows will be affected: {self.intensities.loc[:, tmt_samples].apply(lambda x: x.count() == 1, axis=1).sum()}")
+                    self.intensities.loc[:, tmt_samples] = self.intensities.loc[:, tmt_samples].apply(
+                        lambda x: x if x.count() > 1 else np.nan, axis=1
+                    )
+
         self.tmt_names = sorted(list(self.tmt_names))
         logging.info(f"Client {self.cohort_name}: Found {len(self.tmt_names)} TMT-plexes. Plexes: {self.tmt_names}")
         
@@ -227,34 +246,26 @@ class Client:
         Ensure that gene names are the same and are in the same order.
         """
         global_prots = set(stored_features)
-        self_prots = set(self.prot_names).intersection(global_prots)
+        self_prots = set(self.prot_names)
+
+        if self_prots > global_prots:
+            logging.error(
+                f"Client {self.cohort_name}:\tSome protein groups are not in the global list: {len(self_prots - global_prots)}"
+            )
+            raise ValueError(f"Client {self.cohort_name}:\tSome protein groups are not in the global list.")
         
-        if len(self_prots) != len(set(self_prots)):
-            logging.info("Client %s:\tDuplicate protein names found." % self.cohort_name)
+        elif self_prots < global_prots:
+            logging.info(
+                f"Client {self.cohort_name}:\tSome protein groups are not in the client list: {len(global_prots - self_prots)} and will be added."
+            )
 
-        if self_prots != global_prots:
-            extra_prots = self_prots.difference(global_prots)
-            if len(extra_prots) > 0:
-                logging.info(
-                    "Client %s:\t%s protein groups absent in other datasets are dropped:"
-                    % (self.cohort_name, len(extra_prots))
-                )
-            else:
-                extra_prots = global_prots.difference(self_prots)
-                logging.info("Client %s:\t%s protein groups not found." % (self.cohort_name, len(extra_prots)))
+        self_prots = global_prots
 
-        if not self_prots.issubset(global_prots):
-            extra_prots = self_prots.difference(global_prots)
-            logging.info("Client %s:\t%s protein groups not found in Global proteins. Data load failed." % (self.cohort_name, len(extra_prots)))
-            raise ValueError(
-                f"Client {self.cohort_name}: Some proteins are missing in the global protein list: {extra_prots}"
-            )    
         # reorder genes
         self.prot_names = list(self_prots)
-        self.intensities = self.intensities.loc[self.prot_names, :]
+        self.intensities = self.intensities.reindex(self.prot_names)
         if self.use_counts:
-            self.counts = self.counts.loc[self.prot_names, :]
-        
+            self.counts = self.counts.loc[self.prot_names]
         logging.info(f"Client {self.cohort_name}:\tProtein groups are validated.")
 
     def validate_variables(self, variables):
@@ -291,6 +302,8 @@ class Client:
     def add_cohort_effects_to_design(self, cohorts, plex_covariate=False):
         """add covariates to model cohort effects."""
         logging.info(f"Client {self.cohort_name}:\tAdding cohort effects to the design matrix.")
+        reference_col = cohorts[0]
+        cohorts = cohorts[1:]
 
         if self.experiment_type == EXPERIMENT_TYPE and plex_covariate:
             logging.info(f"Client {self.cohort_name}:\tAdding TMT-plex as a covariate.")
@@ -308,6 +321,16 @@ class Client:
                 else:
                     self.design[cohort] = 0
 
+        # if reference column belongs to the client, set self.check_collinearity = True
+        if reference_col == self.cohort_name:
+            self.check_collinearity = True
+            self.coll_samples = self.design.loc[self.design[reference_col] == 1, :].index.values
+            logging.info(f"Client {self.cohort_name}:\tCollinearity will be checked.")
+        elif self.experiment_type == EXPERIMENT_TYPE and plex_covariate:
+            if reference_col in self.tmt_names:
+                self.check_collinearity = True
+                self.coll_samples = self.design.loc[self.design[self.plex_column] == reference_col, :].index.values
+                logging.info(f"Client {self.cohort_name}:\tCollinearity will be checked.")
         logging.info(f"Client {self.cohort_name}:\tCohort effects are added to the design matrix.")
 
     ######### Filtering ##################
@@ -315,14 +338,14 @@ class Client:
         """
         Remove from intensities and counts proteins supported by just a single peptide.
         """
-        logging.info(f"Client {self.cohort_name}:\tProtein groups supported by a single peptide will be excluded.")
         logging.info(f"Client {self.cohort_name}:\tProtein groups: {len(self.intensities.index)}")
+        logging.info(f"Client {self.cohort_name}:\tProtein groups supported by a single peptide will be excluded.")
         proteins_passing_filter = self.counts[self.counts > 1].index
         self.intensities = self.intensities.loc[proteins_passing_filter]
         self.counts = self.counts[proteins_passing_filter]
         logging.info(f"Client {self.cohort_name}:\tProtein groups after filter: {len(self.intensities.index)}")
 
-    def is_all_na(self, sample_type="sample"):
+    def check_not_na(self, sample_type="sample"):
         """
         If TMT data: For each protein group in each TMT returns 1 if all samples of sample_type are Na.
         """
@@ -345,26 +368,6 @@ class Client:
 
             not_detected_in_tmt = pd.DataFrame.from_dict(not_detected_in_tmt)
             return not_detected_in_tmt
-        
-        if self.experiment_type == EXPERIMENT_TYPE and self.ref_type == "in_silico_reference":
-            # remove proteins that are not detected in any of the pools
-            samples = design.index.values
-            intensities = intensities.loc[:, samples]
-            design = design.loc[samples, :]
-
-            valid_rows = pd.Series(True, index=intensities.index)
-
-            for tmt in set(design['Pool'].values):
-                tmt_samples = design.loc[design['Pool'] == tmt, :].index.values
-                # Check if each row has at least one non-NA value in the current plex samples
-                valid_rows &= intensities[tmt_samples].notna().any(axis=1)
-
-            if self.SKIP_POOLS:
-                logging.info(f"DEBUG: SKIPING POOL FILTERS")
-                pass
-            else:
-                logging.info(f"Client {self.cohort_name}:\tProtein groups not detected in all of the TMT-plexes will be excluded: {intensities.shape[0] - valid_rows.sum()}")
-                self.intensities = intensities.loc[valid_rows]
 
         na_count_in_variable = pd.DataFrame(index=self.intensities.index.values, columns=self.variables)
         samples_per_class = {}
@@ -375,7 +378,6 @@ class Client:
             # na_fraction = tmp_intensities.isna().sum(axis=1) * 1.0 / len(samples)
             na_count = tmp_intensities.isna().sum(axis=1)
             na_count_in_variable[variable] = na_count
-
             # add the number of samples per class
             samples_per_class[variable] = len(samples)
 
@@ -392,7 +394,7 @@ class Client:
             # not_detected_in_refs = self.is_all_na(sample_type="ref")
 
             # marks proteins not detected in samples
-            not_detected_in_samples = self.is_all_na(sample_type)
+            not_detected_in_samples = self.check_not_na(sample_type)
             not_detected = not_detected_in_samples  # + not_detected_in_refs
             not_detected[not_detected > 0] = 1
             not_detected = not_detected.sum(axis=1) / not_detected.shape[1]
@@ -403,7 +405,7 @@ class Client:
             return self.prot_names            
         
         else:           
-            na_count_in_variable, samples_per_class = self.is_all_na(sample_type)
+            na_count_in_variable, samples_per_class = self.check_not_na(sample_type)
             logging.info(
                 f"Client {self.cohort_name}:\tProtein groups detected in less than {min_f} of each target class will be excluded."
             )    
@@ -555,6 +557,49 @@ class Client:
         self.sample_names = self.design.index.values
         self.intensities = self.intensities.loc[self.prot_names, self.sample_names]
         self.n_samples = len(self.sample_names)
+        logging.info(f"Client {self.cohort_name}:\tPrepared for limma. Samples: {self.n_samples}, Proteins: {len(self.prot_names)}.")
+
+    def get_mask(self):
+        X = self.design.values
+        Y = self.intensities.values
+        n = Y.shape[0]  # genes
+        k = self.design.shape[1]  # variables
+
+        mask_X = np.zeros((n, k))
+
+        for i in range(0, n):
+            y = Y[i, :]
+            ndxs = np.argwhere(np.isfinite(y)).reshape(-1)
+            if len(ndxs) > 0:
+                x = X[ndxs, :]
+                column_variances = np.var(x, axis=0)
+                zero_var_mask = column_variances == 0
+                if np.any(zero_var_mask):
+                    mask_X[i, zero_var_mask] = 1
+            else:
+                mask_X[i, :] = 1
+
+        return mask_X
+
+    def updated_mask(self, mask_glob):
+        if self.check_collinearity:
+            for i, protein in enumerate(self.prot_names):
+                # Check if Y values all are NA for the given row
+                y_selected = self.intensities.loc[protein, self.coll_samples]
+                if np.all(np.isnan(y_selected)):
+                    # Find indices of False values in mask_glob[i, len(self.target_classes):]
+                    false_indices = np.where(mask_glob[i, len(self.target_classes):] == False)[0]
+                    if false_indices.size > 0:
+                        # Adjust index to consider the offset from len(self.target_classes)
+                        last_false_index = false_indices[-1] + len(self.target_classes)
+                        # Set the last False value to True
+                        mask_glob[i, last_false_index] = True
+
+            logging.info(f"Client {self.cohort_name}:\tCollinearity check and update completed.")
+
+        mask_glob = mask_glob.astype(int)
+        logging.info(f"Client {self.cohort_name}:\tCollinearity check completed.")
+        return mask_glob
 
     ####### limma: linear regression #########
     def compute_XtX_XtY(self):
@@ -566,8 +611,6 @@ class Client:
         self.XtX = np.zeros((n, k, k))
         self.XtY = np.zeros((n, k))
 
-        mask_X = np.full((n, k), False, dtype=int)
-
         # linear models for each row
         for i in range(0, n): 
             y = Y[i, :]
@@ -575,18 +618,11 @@ class Client:
             ndxs = np.argwhere(np.isfinite(y)).reshape(-1)
             if len(ndxs) > 0: 
                 x = X[ndxs, :]
-            
-                column_variances = np.var(x, axis=0)
-                zero_var_mask = column_variances == 0
-                if np.any(zero_var_mask):
-                    mask_X[i, zero_var_mask] = 1
-                    # mask_X[i, :, zero_var_mask] = 1
-
                 y = y[ndxs]
                 self.XtX[i, :, :] = x.T @ x
-                self.XtY[i, :] = x.T @ y 
+                self.XtY[i, :] = x.T @ y
                 
-        return self.XtX, self.XtY, mask_X
+        return self.XtX, self.XtY
 
     def compute_SSE_and_cov_coef(self, beta, mask_glob):
         X = self.design.values

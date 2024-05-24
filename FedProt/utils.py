@@ -21,13 +21,26 @@ logging.basicConfig(
 )
 
 # get common proteins list
-def get_common_proteins(list_of_features_lists):
+def get_analyzed_proteins(list_of_features_lists, only_shared_proteins=False):
+    """
+    Get proteins list for the analysis from list of proteins lists.
+    :param list_of_features_lists: list of proteins lists
+    :param only_shared_proteins: if True, return only shared proteins
+    :return: list of proteins
+    """
     prot_names = list()
-    for features_list in list_of_features_lists:
-        if len(prot_names) == 0:
-            prot_names =  sorted(set(features_list))
-        else:
+
+    if only_shared_proteins:
+        prot_names = list_of_features_lists[0]
+        for features_list in list_of_features_lists:
             prot_names = sorted(list(set(prot_names) & set(features_list)))
+    else:
+        # use union of all proteins, not only shared
+        for features_list in list_of_features_lists:
+            if len(prot_names) == 0:
+                prot_names =  sorted(set(features_list))
+            else:
+                prot_names = sorted(list(set(prot_names) | set(features_list)))
     return prot_names
 
 
@@ -63,17 +76,34 @@ def aggregate_medians(avg_medians, total_samples):
     global_median_mean = weighted_sum / sum(total_samples.values())
     return global_median_mean
 
+
+def aggregate_masks(list_of_masks, n, k, second_round=False, used_SMPC=False):
+    mask_glob = np.zeros((n, k))
+
+    if not used_SMPC:
+        # non-smpc case, need to aggregate
+        logging.info('SMPC is not used, aggregating masks')
+        for mask in list_of_masks:
+            mask_glob += mask
+    else:
+        # smpc case, already aggregated
+        mask_glob = list_of_masks[0]
+
+    if second_round:
+        mask_glob = mask_glob > 0
+    else:
+        mask_glob = mask_glob == len(list_of_masks)
+    return mask_glob
+
 # aggragate XtX and XtX
-def aggregate_XtX_XtY(list_of_xt_lists, masks_lists_list, n, k, used_SMPC):
+def aggregate_XtX_XtY(list_of_xt_lists, n, k, used_SMPC):
     
     XtX_glob = np.zeros((n, k, k))
     XtY_glob = np.zeros((n, k))
-    mask_glob = np.zeros((n, k))
     
     # non-smpc case, need to aggregate
     XtX_list = list()
     XtY_list = list()
-    masks_list = list()
 
     if not used_SMPC:
         # non-smpc case, need to aggregate
@@ -81,37 +111,40 @@ def aggregate_XtX_XtY(list_of_xt_lists, masks_lists_list, n, k, used_SMPC):
         for i, pair in enumerate(list_of_xt_lists):
             XtX_list.append(pair[0])
             XtY_list.append(pair[1])
-            masks_list.append(masks_lists_list[i])
 
         for i in range(0, len(list_of_xt_lists)):
             XtX_glob += XtX_list[i] 
             XtY_glob  += XtY_list[i]
-            mask_glob += masks_list[i]
     else:
         # smpc case, already aggregated
         XtX_XtY_list = list_of_xt_lists[0]
         XtX_glob += XtX_XtY_list[0]
         XtY_glob += XtX_XtY_list[1]
-        mask_glob = masks_lists_list[0]
 
-    mask_glob = mask_glob != 0
-    return XtX_glob, XtY_glob, mask_glob
+    return XtX_glob, XtY_glob
 
 
 # compute beta for lmfit
-def compute_beta_and_stdev(XtX_glob, XtY_glob, n, k):
+def compute_beta_and_stdev(XtX_glob, XtY_glob, n, k, mask_glob):
     stdev_unscaled = np.zeros((n, k))
     beta = np.zeros((n, k))
 
-    for i in range(0, n):
-        if linalg.det(XtX_glob[i, :, :]) == 0:
-            logging.warning(f"XtX is singular for protein {i}, determinant is 0.")
-            invXtX = linalg.pinv(XtX_glob[i, :, :])
-        else:
-            invXtX = linalg.inv(XtX_glob[i, :, :])
-        beta[i, :] = invXtX @ XtY_glob[i, :]
-        stdev_unscaled[i, :] = np.sqrt(np.diag(invXtX))
+    partial_na = 0
 
+    for i in range(0, n):
+        mask = mask_glob[i, :]
+        submatrix = XtX_glob[i, :, :][np.ix_(~mask, ~mask)]
+
+        if linalg.det(XtX_glob[i, :, :]) == 0:
+            partial_na += 1
+
+        invXtX = linalg.inv(submatrix)
+        beta[i, ~mask] = invXtX @ XtY_glob[i, ~mask]
+ 
+        diagonal = np.diag(invXtX)
+        stdev_unscaled[i, ~mask] = np.sqrt(diagonal)   
+
+    logging.info(f"Detected partial NA coefficients for {partial_na} probe(s).")
     return beta, stdev_unscaled
 
 
