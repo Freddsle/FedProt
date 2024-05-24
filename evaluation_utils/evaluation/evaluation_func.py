@@ -244,7 +244,8 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                 add_table=True, sharey=True, sharex=True,
                 comparsions=["pyr/glu", "pyr/glu"],
                 use_RMSE=False,
-                figsize=(10,4.5), after_comma=3
+                figsize=(10,4.5), after_comma=3,
+                titles = None
     ):
     
     logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -253,8 +254,10 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
     i=0
     se = 0 
     results = {}
-    max_xlim = 0
-    min_xlim = 0
+    max_xlim = []
+    min_xlim = []
+    min_ylim = []
+    max_ylim = []
 
     if what == "pv_":
         max_p_val = np.max(np.abs(dfs[datasets[0]]['pv_DEqMS']))
@@ -267,7 +270,10 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
 
     for k in datasets:
         df = dfs[k].filter([f'{what}DEqMS']+[what+i for i in methods])
-        axes[i].set_title(k, fontsize=16)
+        if titles:
+            axes[i].set_title(titles[i], fontsize=16)
+        else:
+            axes[i].set_title(k, fontsize=16)
         rmse = {}
         NRMSE = {}
         
@@ -278,21 +284,29 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
             y = df[what+method].values
             rmse[method] = np.sqrt(np.sum((x-y)**2)/len(x))
             NRMSE[method] = rmse[method] / (np.max(x) - np.min(x))
-            axes[i].scatter(x = np.abs(x), y= np.abs(y),s=dotsize, color=col, alpha=0.5)
+            if what == "pv_":
+                axes[i].scatter(x = np.abs(x), y= np.abs(y),s=dotsize, color=col, alpha=0.5)
+            else:
+                axes[i].scatter(x = x, y= y,s=dotsize, color=col, alpha=0.5)
         
         axes[i].set_xlabel(f'{suptitle} {comparsions[i]}, \nDEqMS',fontsize=12)
         axes[i].set_ylabel(f'{suptitle} {comparsions[i]}, \nother methods',fontsize=12)
-        axes[i].plot([np.min(np.abs(df.values)), np.max(np.abs(df.values))+5], 
-                     [np.min(np.abs(df.values)), np.max(np.abs(df.values))+5],
-                   color = "red",ls="--",lw=0.5)
         
         if not sharex:
-            max_deqms = np.max(np.abs(df[what+"DEqMS"].values))
-            min_deqms = np.min(np.abs(df[what+"DEqMS"].values))
+            if what == "pv_":
+                max_deqms = np.max(np.abs(df[what+"DEqMS"].values))
+                min_deqms = np.min(np.abs(df[what+"DEqMS"].values))
+            else:
+                max_deqms = np.max(df[what+"DEqMS"].values)
+                min_deqms = np.min(df[what+"DEqMS"].values)
             axes[i].set_xlim(min_deqms - max_deqms*0.01, max_deqms + max_deqms*0.1)
 
-            max_others = np.max(np.abs(df[[what+m for m in methods]].values))
-            min_others = np.min(np.abs(df[[what+m for m in methods]].values))
+            if what == "pv_":
+                max_others = np.max(np.abs(df[[what+m for m in methods]].values))
+                min_others = np.min(np.abs(df[[what+m for m in methods]].values))
+            else:
+                max_others = np.max(df[[what+m for m in methods]].values)
+                min_others = np.min(df[[what+m for m in methods]].values)
             axes[i].set_ylim(min_others - max_others*0.01, max_others + max_others*0.1)
 
         # Calculate correlations
@@ -347,7 +361,10 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                     cell.get_text().set_color('black')
 
         else:               
-            axes[i].legend(methods, loc='upper right', title='Methods', fontsize=10, markerscale=8, markerfirst=False)
+            if what == "lfc_":
+                axes[i].legend(methods, loc='lower right', title='Methods', fontsize=10, markerscale=8, markerfirst=False)
+            else:
+                axes[i].legend(methods, loc='upper right', title='Methods', fontsize=10, markerscale=8, markerfirst=False)
             
 
         i += 1
@@ -356,23 +373,34 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
         if use_RMSE:
             results[(k,"NRMSE*")] = pd.Series(NRMSE)
 
-        max_xlim_method = np.max(np.abs(df[what+"DEqMS"].values))
         if what == "pv_":
-            max_xlim_method = max_xlim_method + max_xlim_method*0.05
+            max_xlim_method = np.max(np.abs(df[what+"DEqMS"].values))
+            min_xlin_method = np.min(np.abs(df[what+"DEqMS"].values))
+            min_ylim_dataset = np.min(np.abs(df[[what+m for m in methods]].values))
+            max_ylim_dataset = np.max(np.abs(df[[what+m for m in methods]].values))
         else:
-            max_xlim_method = max_xlim_method + max_xlim_method*0.05
-        if max_xlim < max_xlim_method:
-            max_xlim = max_xlim_method
-
-        min_xlin_method = np.min(np.abs(df[what+"DEqMS"].values))
-        min_xlin_method = min_xlin_method - max_xlim_method*0.01
-
-        if min_xlim > min_xlin_method:
-            min_xlim = min_xlin_method
+            max_xlim_method = np.max(df[what+"DEqMS"].values)            
+            min_xlin_method = np.min(df[what+"DEqMS"].values)
+            min_ylim_dataset = np.min(df[[what+m for m in methods]].values)
+            max_ylim_dataset = np.max(df[[what+m for m in methods]].values)
+            
+        max_xlim.append(max_xlim_method + max_xlim_method*0.05)
+        min_xlim.append(min_xlin_method - abs(min_xlin_method*0.05))
+        min_ylim.append(min_ylim_dataset - abs(min_ylim_dataset*0.05))
+        max_ylim.append(max_ylim_dataset + max_ylim_dataset*0.05)
             
     if sharex:
         for i in range(len(datasets)):
-            axes[i].set_xlim(min_xlim, max_xlim)
+            axes[i].set_xlim(min(min_xlim), max(max_xlim))
+            
+    if sharey:
+        for i in range(len(datasets)):
+            axes[i].set_ylim(min(min_ylim), max(max_ylim))
+
+    for i in range(len(datasets)):
+        axes[i].plot([min(min_xlim), max(max_xlim)], 
+                    [min(min_xlim), max(max_xlim)],
+                    color = "red",ls="--",lw=0.5)
     
     results = pd.DataFrame.from_dict(results)
     
@@ -442,7 +470,8 @@ def plot_stats_for_topN(dfs,
                         color_dict={"Methods": {"FedProt": "blue", "Fisher": "green", "Stouffer": "orange", "REM": "purple", "RankProd": "brown"}},
                         min_n_genes=10, max_n_genes=1000, step=10,
                         text="",
-                        figfile="", suptitle="", sharey=False):
+                        figfile="", suptitle="", sharey=False,
+                        titles=None):
 
     """Calculated and plots statisctics for top N genes ordered by p-value.
     Top genes are chosen based on a sliding threshold, starting from 'min_n_genes' and moving to 'max_n_genes' with 'step'."""
@@ -493,7 +522,10 @@ def plot_stats_for_topN(dfs,
             if i > 0 or k != len(metrics) - 1:
                 axes[i].get_legend().remove()
             if k == 0:
-                tmp = axes[i].set_title(ds, fontsize=20)
+                if titles:
+                    tmp = axes[i].set_title(titles[i], fontsize=20)
+                else:
+                    tmp = axes[i].set_title(ds, fontsize=20)
             all_stats[metric][ds] = stats
 
     for k in range(len(metrics)):
@@ -517,7 +549,8 @@ def plot_stats_for_topN(dfs,
 
 def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
                         num_top_genes=range(5, 700, 5),
-                        figfile="", figsize=(13, 4)):
+                        figfile="", figsize=(13, 4),
+                        titles=None):
     fig, axes = plt.subplots(1, len(jaccard_dfs), figsize=figsize, sharey=sharey)
     datasets = list(jaccard_dfs.keys())
 
@@ -541,7 +574,7 @@ def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
             axes[i].plot(num_top_genes, mean_scores, label=method, color=color_dict["Methods"][method])
             axes[i].fill_between(num_top_genes, mean_scores - std_deviation, mean_scores + std_deviation, color=color_dict["Methods"][method], alpha=0.1)
         
-        axes[i].set_title(f"{ds} simulated data")
+        axes[i].set_title(f"Simulated {titles[i].lower()}", fontsize=16)
         axes[i].set_xlabel("Number of top-ranked proteins", fontsize=14)
         axes[i].set_yticks(np.arange(0, 1.1, 0.1))
         if i == 0:
