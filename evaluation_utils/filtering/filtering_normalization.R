@@ -50,7 +50,7 @@ filter_by_condition <- function(intensities, metadata, quantitative_column_name,
 
   # Determine rows with at least 2 non-NA values for each group's samples
   conditions <- sapply(condition_samples, function(samples) {
-    rowSums(is.na(intensities[, samples, drop = FALSE])) / length(samples) <= min_f
+    rowSums(is.na(intensities[, samples, drop = FALSE])) / length(samples) <= min_f & rowSums(!is.na(intensities[, samples, drop = FALSE])) >= 2
   })
   # Filter intensities where all conditions are met
   filtered_intensities <- intensities[rowSums(conditions) == length(groups), ]

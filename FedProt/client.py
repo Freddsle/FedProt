@@ -324,7 +324,7 @@ class Client:
         # if reference column belongs to the client, set self.check_collinearity = True
         if reference_col == self.cohort_name:
             self.check_collinearity = True
-            self.coll_samples = self.design.loc[self.design[reference_col] == 1, :].index.values
+            self.coll_samples = self.design.index.values
             logging.info(f"Client {self.cohort_name}:\tCollinearity will be checked.")
         elif self.experiment_type == EXPERIMENT_TYPE and plex_covariate:
             if reference_col in self.tmt_names:
@@ -572,10 +572,12 @@ class Client:
             ndxs = np.argwhere(np.isfinite(y)).reshape(-1)
             if len(ndxs) > 0:
                 x = X[ndxs, :]
-                column_variances = np.var(x, axis=0)
-                zero_var_mask = column_variances == 0
-                if np.any(zero_var_mask):
-                    mask_X[i, zero_var_mask] = 1
+                # column_variances = np.var(x, axis=0)
+                column_means = np.mean(x, axis=0)
+                # zero_var_mask = column_variances == 0
+                zero_mean_mask = column_means == 0
+                if np.any(zero_mean_mask):
+                    mask_X[i, zero_mean_mask] = 1
             else:
                 mask_X[i, :] = 1
 

@@ -25,12 +25,14 @@ def read_results(workdir,
     df["pv_DEqMS"] = DEqMS["sca.adj.pval"]
     # df["pv_DEqMS"] = DEqMS["sca.P.Value"]
     df["lfc_DEqMS"] = DEqMS["logFC"]
+    logging.info(f"Results loaded for DEqMS with {DEqMS.shape[0]} proteins.")
 
     # FedProt
     fedprot = pd.read_csv(workdir+fedprot_name, sep="\t", index_col=0)
     df["pv_FedProt"] = fedprot["sca.adj.pval"]
     # df["pv_FedProt"] = fedprot["sca.P.Value"]
     df["lfc_FedProt"] = fedprot["logFC"]
+    logging.info(f"Results loaded for FedProt with {fedprot.shape[0]} proteins.")
 
     # Fisher
     ma_cm = pd.read_csv(workdir+fisher_name, sep="\t")
@@ -39,6 +41,7 @@ def read_results(workdir,
     _, adj_pval,_,_ = multipletests(ma_cm["metap"].values, alpha=0.05, method='fdr_bh',
                                     is_sorted=False, returnsorted=False)
     df["pv_Fisher"] = pd.Series(adj_pval,index=ma_cm["metap"].index)
+    logging.info(f"Results loaded for Fisher with {ma_cm.shape[0]} proteins.")
 
     # REM
     ma_rem = pd.read_csv(workdir+rem_name, sep="\t")
@@ -47,20 +50,23 @@ def read_results(workdir,
     _, adj_pval, _, _ = multipletests(ma_rem["randomP"].values, alpha=0.05, method='fdr_bh',
                                       is_sorted=False, returnsorted=False)
     df["pv_REM"] = pd.Series(adj_pval,index=ma_rem["randomP"].index)
+    logging.info(f"Results loaded for REM with {ma_rem.shape[0]} proteins.")
 
     ### Stoufer 
     stoufer  = pd.read_csv(workdir+stouffer_name, sep="\t", index_col=0)
     df["pv_Stouffer"] = stoufer["FDR"]
     df["lfc_Stouffer"] = df["lfc_Fisher"]  # take logFC from MetaVolcanoR
+    logging.info(f"Results loaded for Stouffer with {stoufer.shape[0]} proteins.")
 
     ### RankProd
     rankprod  = pd.read_csv(workdir+rankprod_name, sep="\t", index_col=0)
     rankprod["FDR"] = rankprod.loc[:,["down_reg.FDR","up_reg.FDR"]].min(axis=1)
     df["pv_RankProd"] = rankprod["FDR"]
     df["lfc_RankProd"] = rankprod["avgL2FC"] 
+    logging.info(f"Results loaded for RankProd with {rankprod.shape[0]} proteins.")
     
-    df = pd.DataFrame.from_dict(df)
-    df = df.dropna(axis=0)
+    with_NA_df = pd.DataFrame.from_dict(df)
+    df = with_NA_df.dropna(axis=0)
 
     logging.info(f"Results loaded from {workdir} with {df.shape[0]} genes. Adj.p-values were not log-transformed.")
     return df

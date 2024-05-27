@@ -30,16 +30,10 @@ try:
     # ONLY FOR EVALUATION
     if number_of_arguments > 5:
         keep_proteins_path = str(sys_arguments[5])
-        USE_PRE_FILTER = True
+        CHECK_NUMBER = True
     else:
-        USE_PRE_FILTER = False
+        CHECK_NUMBER = False
 
-    # else:
-    #     # test data
-    #     data_dir = "/home/yuliya/repos/cosybio/FedProt/data/bacterial_data/"
-    #     MODE = "balanced"
-    #     cohorts = ["lab_A", "lab_B", "lab_C", "lab_D", "lab_E"]
-    #     output_path = "/home/yuliya/repos/cosybio/FedProt/evaluation/bacterial/"
 except ValueError:
     print("Invalid input.")
     sys.exit(1)
@@ -83,6 +77,8 @@ else:
 remove_single_pep_protein = config["fedprot"]["remove_single_pep_protein"]
 target_classes = config["fedprot"]["target_classes"]
 covariates = config["fedprot"]["covariates"]
+
+only_shared_proteins = config["fedprot"]["only_shared_proteins"]
 
 logging.info(f"Data directory: {data_dir}")
 
@@ -141,7 +137,7 @@ if experiment_type == "TMT":
         plex_covariates_list = sorted(list(set(plex_covariates_list)))
 
 # SERVER SIDE
-prot_names = utils.get_common_proteins(prot_names)
+prot_names = utils.get_analyzed_proteins(prot_names, only_shared_proteins)
 logging.info(f"SERVER: Common proteins: {len(prot_names)}")
 variables = target_classes + covariates
 
@@ -163,18 +159,17 @@ total_samples = {}
 
 for c in cohorts:
     client = store_clients[c]
-    client.validate_inputs(prot_names, variables)
-
     if use_counts:
-        client.counts = global_min_counts[global_min_counts.index.isin(client.prot_names)]
+        client.counts = global_min_counts.copy()
+    client.validate_inputs(prot_names, variables)
 
     # add cohort effect columns to each design matrix
     # if plex_covariate exists, use this column as a cohort effect
     if experiment_type == "TMT":
         if plex_covariate:
-            client.add_cohort_effects_to_design(plex_covariates_list[1:], plex_covariate)
+            client.add_cohort_effects_to_design(plex_covariates_list, plex_covariate)
     else:
-        client.add_cohort_effects_to_design(cohorts[1:])
+        client.add_cohort_effects_to_design(cohorts)
 
     logging.info(f"Samples in {client.cohort_name} data: {len(client.sample_names)}")        
     logging.info(f"Protein groups in {client.cohort_name} data:  {len(client.prot_names)}")
@@ -198,9 +193,8 @@ logging.info("Min counts have been computed...")
 keep_proteins = utils.filter_features_na_rate(list_of_na_counts_tuples, max_na_rate)
 logging.info(f"SERVER: Proteins after filtering: {len(keep_proteins)}")
 
-
 # ONLY FOR EVALUATION
-if USE_PRE_FILTER:
+if CHECK_NUMBER:
     # read keep_proteins from json file 
     with open(keep_proteins_path, 'r') as file:
         list_from_prefilter = json.load(file)
@@ -210,8 +204,6 @@ if USE_PRE_FILTER:
     # write to the json file
     with open(keep_proteins_path, 'w') as file:
         json.dump(list_from_prefilter, file)
-    # -- the list of proteins to keep is in ["mode name"]["Meta"] inside json file
-    keep_proteins = list_from_prefilter[MODE]["meta"]
     logging.info(f"SERVER: Proteins after filtering FOR EVALUATION: {len(keep_proteins)}")
 
 # CLIENT SIDE
@@ -220,7 +212,6 @@ for c in cohorts:
     client.update_prot_names(keep_proteins)
 
 # Normalize intensities
-
 # CLIENT SIDE
 # if TMT and use_median, compute medians
 if experiment_type == "TMT" and use_median:
@@ -245,6 +236,34 @@ if experiment_type == "TMT" and use_median:
         if experiment_type == "TMT" and use_irs:
             client.irsNorm_in_silico_single_center()
 
+#############################################################
+# Mask preparation
+# CLIENT SIDE
+masks_list = []
+for c in cohorts:
+    client = store_clients[c]
+    client.prepare_for_limma(keep_proteins)
+
+    masks_list.append(client.get_mask())
+
+# SERVER SIDE
+variables = client.design.columns.values
+k = len(variables)
+n = len(keep_proteins)
+logging.info(f"SERVER: Number of proteins: {n}, number of variables: {k}")
+
+# aggregate mask
+global_mask = utils.aggregate_masks(masks_list, n, k, used_SMPC=False)
+
+# CLIENT SIDE
+list_of_masks = []
+for c in cohorts:
+    client = store_clients[c]
+    updated_masks = client.updated_mask(global_mask)
+    list_of_masks.append(updated_masks)
+
+# SERVER SIDE
+mask_glob = utils.aggregate_masks(list_of_masks, n, k, second_round=True, used_SMPC=False)
 
 # CLIENT SIDE
 XtX_XtY_list = []
@@ -253,25 +272,18 @@ for c in cohorts:
     client = store_clients[c]
 
     logging.info("Start computing XtX and XtY")
-    client.prepare_for_limma(keep_proteins)
     XtX, XtY = client.compute_XtX_XtY()
     XtX_XtY_list.append((XtX, XtY))
 
     logging.info(f"XtX and XtY have been computed for {client.cohort_name}")
     logging.info(f'Design colnames: {client.design.columns.values}')
 
-variables = client.design.columns.values
-
 # SERVER SIDE
-k = len(variables)
-n = len(keep_proteins)
-logging.info(f"SERVER: Number of proteins: {n}, number of variables: {k}")
-
 XtX_glob, XtY_glob = utils.aggregate_XtX_XtY(XtX_XtY_list, n, k, used_SMPC=False)
 logging.info("SERVER: XtX and XtY have been aggregated")
 logging.info('SERVER: Computing beta and stdev')
 
-beta, stdev_unscaled = utils.compute_beta_and_stdev(XtX_glob, XtY_glob, n, k)
+beta, stdev_unscaled = utils.compute_beta_and_stdev(XtX_glob, XtY_glob, n, k, mask_glob)
 
 # CLIENT SIDE
 list_of_sse_cov_coef = []
@@ -279,7 +291,7 @@ list_of_sse_cov_coef = []
 for c in cohorts:
     client = store_clients[c]
     logging.info(f"Start computation of SSE and cov_coef...")
-    SSE, cov_coef = client.compute_SSE_and_cov_coef(beta)
+    SSE, cov_coef = client.compute_SSE_and_cov_coef(beta, mask_glob)
     intensities_sum = np.array(client.sum_intensities())
     n_measurements = np.array(client.get_not_na())
     list_of_sse_cov_coef.append((SSE, cov_coef, intensities_sum, n_measurements))
@@ -289,9 +301,10 @@ for c in cohorts:
 logging.info("SERVER: Aggregating SSE and cov_coef...")
 SSE, cov_coef, Amean, n_measurements = utils.aggregate_SSE_and_cov_coef(
         list_of_sse_cov_coef, n, k, False, len(store_clients))
+
 logging.info('Aggregation of SSE is done, start computing global parameters...')
 sigma, cov_coef, df_residual, Amean, var = utils.compute_SSE_and_cov_coef_global(
-            cov_coef, SSE, Amean, n_measurements, n, k
+            cov_coef, SSE, Amean, n_measurements, n, mask_glob
         )
 
 logging.info('Making contrasts...')

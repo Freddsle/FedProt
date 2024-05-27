@@ -37,5 +37,6 @@ colnames(fdr) <- c("down_reg.FDR","up_reg.FDR")
 avgL2FC <- RP_obj_lfc$AveFC
 colnames(avgL2FC) <- c("avgL2FC")
 result <- cbind(pvals,fdr,avgL2FC)
+dim(result)
 write.table(result,paste0(w_dir,"/MA_RankProd.tsv"),row.names=TRUE,sep="\t", quote = FALSE,dec = ".")
 	
