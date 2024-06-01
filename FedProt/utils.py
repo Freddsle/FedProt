@@ -129,14 +129,9 @@ def compute_beta_and_stdev(XtX_glob, XtY_glob, n, k, mask_glob):
     stdev_unscaled = np.zeros((n, k))
     beta = np.zeros((n, k))
 
-    partial_na = 0
-
     for i in range(0, n):
         mask = mask_glob[i, :]
         submatrix = XtX_glob[i, :, :][np.ix_(~mask, ~mask)]
-
-        if linalg.det(XtX_glob[i, :, :]) == 0:
-            partial_na += 1
 
         invXtX = linalg.inv(submatrix)
         beta[i, ~mask] = invXtX @ XtY_glob[i, ~mask]
@@ -144,7 +139,7 @@ def compute_beta_and_stdev(XtX_glob, XtY_glob, n, k, mask_glob):
         diagonal = np.diag(invXtX)
         stdev_unscaled[i, ~mask] = np.sqrt(diagonal)   
 
-    logging.info(f"Detected partial NA coefficients for {partial_na} probe(s).")
+    logging.info(f"Detected partial NA coefficients for {mask_glob.any(axis=1).sum()} probe(s).")
     return beta, stdev_unscaled
 
 
@@ -719,4 +714,4 @@ def apply_multiple_test_correction(table, stored_features, return_sorted=False):
     if return_sorted:
         table.sort_values(by=["sca.adj.pval", "sca.P.Value"], inplace=True)
 
-    return table
+    return table    

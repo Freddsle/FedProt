@@ -33,7 +33,7 @@ sim.dat.fn = function(row.frac, col.frac, mu.up, mu.down, n, m, nu.fix=TRUE) {
 
 
 select_proportions <- function(mode_version){
-    if(mode_version == "balanced"){
+    if(mode_version == "balanced"|| mode_version == "imbalanced_balanced"){
         percent_batch1 <- 0.6
         percent_batch2 <- 0.6
         percent_batch3 <- 0.6
@@ -41,7 +41,7 @@ select_proportions <- function(mode_version){
         percent_batch1 <- 0.4
         percent_batch2 <- 0.5
         percent_batch3 <- 0.66
-    } else if(mode_version == "imbalanced"){
+    } else if(mode_version == "imbalanced" || mode_version == "balanced_imbalanced"){
         percent_batch1 <- 0.2
         percent_batch2 <- 0.5
         percent_batch3 <- 0.7

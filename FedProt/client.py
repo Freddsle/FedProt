@@ -23,6 +23,7 @@ class Client:
         ref_type=None,
         plex_column=None,
         target_classes=None,
+        TEST_MODE=False,
     ):
         self.experiment_type = experiment_type
         self.cohort_name = cohort_name
@@ -51,7 +52,8 @@ class Client:
 
         if not self.open_dataset(intensities_file_path, 
                                  count_file_path, 
-                                 annotation_file_path):
+                                 annotation_file_path,
+                                 TEST_MODE = TEST_MODE):
             raise Exception("Failed to open dataset")
         
         self.check_collinearity = False
@@ -62,7 +64,7 @@ class Client:
         self.fitted_logcounts = None
         self.mu = None
 
-    def open_dataset(self, intensities_file_path, count_file_path, design_file_path, count_pep_file_path=None, ):
+    def open_dataset(self, intensities_file_path, count_file_path, design_file_path, count_pep_file_path=None, TEST_MODE=False):
         """
         For LFQ-data:
         Reads data and design matrices and ensures that sample names are the same.
@@ -74,14 +76,18 @@ class Client:
         """
         self.read_files(intensities_file_path, count_file_path, design_file_path, count_pep_file_path)
 
-        if not self.process_files():
+        if not self.process_files(TEST_MODE):
             logging.error(f"Client {self.cohort_name}: Failed to process files.")
             return False
         
         self.check_and_reorder_samples()
 
         # remove rows with less than 2 non-NA values
-        self.intensities = self.intensities.dropna(axis=0, thresh=2)
+        if not TEST_MODE:
+            self.intensities = self.intensities.dropna(axis=0, thresh=2)
+            logging.info(f"Client {self.cohort_name}: Rows with less than 2 non-NA values are removed.")
+        else:
+            logging.info(f"Client {self.cohort_name}: Skipping the removal of rows with less than 2 non-NA values.")
         self.prot_names = list(self.intensities.index.values)
 
         # Check if the data has only one sample or one protein
@@ -115,7 +121,7 @@ class Client:
 
         self.design = pd.read_csv(design_file_path, sep="\t", index_col=0)
 
-    def process_files(self):
+    def process_files(self, TEST_MODE=False):
         """Process the loaded data based on experiment type."""
         if self.experiment_type == EXPERIMENT_TYPE:
             if not SAMPLE_TYPE in self.design.columns and self.ref_type != "in_silico_reference":
@@ -125,9 +131,12 @@ class Client:
                 return False
         
         # If any row contains only one non-NA value in a row, replace it with NA
-        logging.info(f"Client {self.cohort_name}: Replacing rows with only one non-NA value with NA.")
-        logging.info(f"Client {self.cohort_name}: Rows will be affected : {self.intensities.apply(lambda x: x.count() == 1, axis=1).sum()}")
-        self.intensities = self.intensities.apply(lambda x: x if x.count() > 1 else np.nan, axis=1)
+        if not TEST_MODE:
+            logging.info(f"Client {self.cohort_name}: Replacing rows with only one non-NA value with NA.")
+            logging.info(f"Client {self.cohort_name}: Rows will be affected : {self.intensities.apply(lambda x: x.count() == 1, axis=1).sum()}")
+            self.intensities = self.intensities.apply(lambda x: x if x.count() > 1 else np.nan, axis=1)
+        else:
+            logging.info(f"Client {self.cohort_name}: Skipping the replacement of rows with only one non-NA value with NA.")
 
         # if intensities not log2 transformed
         if not self.log_transformed and self.experiment_type != EXPERIMENT_TYPE:
@@ -249,10 +258,9 @@ class Client:
         self_prots = set(self.prot_names)
 
         if self_prots > global_prots:
-            logging.error(
-                f"Client {self.cohort_name}:\tSome protein groups are not in the global list: {len(self_prots - global_prots)}"
+            logging.info(
+                f"Client {self.cohort_name}:\tSome protein groups are not in the global list: {len(self_prots - global_prots)} and will be excluded."
             )
-            raise ValueError(f"Client {self.cohort_name}:\tSome protein groups are not in the global list.")
         
         elif self_prots < global_prots:
             logging.info(

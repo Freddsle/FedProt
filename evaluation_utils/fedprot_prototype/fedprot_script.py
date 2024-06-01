@@ -15,6 +15,9 @@ logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S"
 )
 
+# Test mode - if True, turn off "less then 2 non-NA samples" filter - keeping all values, even if there is only one sample
+# If False, filter out proteins with less then 2 non-NA samples - but the result will be different from the centralized version. 
+TEST_MODE = True
 
 try:
     sys_arguments = sys.argv
@@ -115,6 +118,7 @@ for cohort_name in cohorts:
         ref_type = ref_type,
         plex_column = plex_column,
         target_classes = target_classes,
+        TEST_MODE = TEST_MODE
     )
     store_clients[client.cohort_name] = client
 
@@ -123,13 +127,13 @@ for cohort_name in cohorts:
         if plex_covariate:
             plex_covariates_list += client.tmt_names
 
-    # add list (as list of lists) of protein names
-    prot_names.append(client.prot_names)
-
     if use_counts:
         min_counts = client.get_min_count()
         list_of_counts.append(min_counts.to_dict())
         logging.info("Min counts have been computed...")
+    
+    # add list (as list of lists) of protein names
+    prot_names.append(client.prot_names)
 
 
 if experiment_type == "TMT":

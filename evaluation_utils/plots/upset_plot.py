@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 
 def generate_upset_plot(intensities, colname, title, splited=False, 
                         categories=['Center1', 'Center2', 'Center3'],
-                        save_plot=False, path_svg=None):
+                        save_plot=False, path_svg=None, size_fig=(8, 3.5)
+                        ):
     # Extracting unique features from each center
     features_sets = {}
     for center, details in intensities.items():
@@ -41,9 +42,11 @@ def generate_upset_plot(intensities, colname, title, splited=False,
     upset = UpSet(example, subset_size='count', show_counts=True, sort_by='cardinality')
     upset.plot()
     plt.title(title)
+    # control the size of the plot
+    plt.gcf().set_size_inches(size_fig[0], size_fig[1])
 
     if save_plot:
         plt.savefig(path_svg, dpi=300, format='svg')
         plt.show()
     else:
-        plt.show()
+        plt.show( )

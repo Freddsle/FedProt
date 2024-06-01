@@ -10,9 +10,9 @@ outputResult <-function(fit, coef_col=1){
     results.table$count = fit$count[results.table$gene]
     
     results.table$sca.t = fit$sca.t[results.table$gene,coef_col]
-    results.table$P.Value = fit$sca.p[results.table$gene,coef_col]
+    results.table$P.Value = fit$p.value[results.table$gene,coef_col]
     results.table$sca.P.Value = fit$sca.p[results.table$gene,coef_col]
-    results.table$adj.P.Val = p.adjust(results.table$sca.P.Value, method = "BH")
+    results.table$adj.P.Val = p.adjust(results.table$P.Value, method = "BH")
     results.table$sca.adj.pval = p.adjust(results.table$sca.P.Value, method = "BH")
     results.table = results.table[order(results.table$sca.P.Value), ]
 }

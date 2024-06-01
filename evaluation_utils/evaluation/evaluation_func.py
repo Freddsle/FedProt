@@ -15,7 +15,10 @@ def read_results(workdir,
                 fisher_name="/MA_CM.tsv",
                 rem_name="/MA_REM.tsv",
                 stouffer_name="/MA_Stouffer.tsv",   
-                rankprod_name="/MA_RankProd.tsv"):
+                rankprod_name="/MA_RankProd.tsv",
+                corrected_deqms_name=None,
+                only_two = False,
+                drop_na=True):
     logging.basicConfig(level=logging.INFO, format='%(message)s')
 
     df = {}
@@ -33,6 +36,19 @@ def read_results(workdir,
     # df["pv_FedProt"] = fedprot["sca.P.Value"]
     df["lfc_FedProt"] = fedprot["logFC"]
     logging.info(f"Results loaded for FedProt with {fedprot.shape[0]} proteins.")
+
+    if only_two:
+        if corrected_deqms_name:
+            DEqMS_corrected = pd.read_csv(workdir+corrected_deqms_name, sep="\t", index_col=0)
+            df["pv_DEqMS_corrected"] = DEqMS_corrected["sca.adj.pval"]
+            df["lfc_DEqMS_corrected"] = DEqMS_corrected["logFC"]
+            logging.info(f"Results loaded for DEqMS_corrected with {DEqMS_corrected.shape[0]} proteins.")
+        
+        df = pd.DataFrame.from_dict(df)
+        if drop_na:
+            df = df.dropna(axis=0)
+        logging.info(f"Results loaded from {workdir} with {df.shape[0]} genes. Adj.p-values were not log-transformed.")
+        return df
 
     # Fisher
     ma_cm = pd.read_csv(workdir+fisher_name, sep="\t")
@@ -65,8 +81,9 @@ def read_results(workdir,
     df["lfc_RankProd"] = rankprod["avgL2FC"] 
     logging.info(f"Results loaded for RankProd with {rankprod.shape[0]} proteins.")
     
-    with_NA_df = pd.DataFrame.from_dict(df)
-    df = with_NA_df.dropna(axis=0)
+    df = pd.DataFrame.from_dict(df)
+    if drop_na:
+        df = df.dropna(axis=0)
 
     logging.info(f"Results loaded from {workdir} with {df.shape[0]} genes. Adj.p-values were not log-transformed.")
     return df
@@ -514,6 +531,7 @@ def plot_stats_for_topN(dfs,
                                                   top_genes=top_n_genes[j])
                 stats[top_n_genes[j]] = confusion_matrix[metric]
             stats = pd.DataFrame.from_dict(stats)
+            # print(stats.T)
             stats.T.plot(ax=axes[i], cmap=cmap)
             min_ylim[metric] = min(min_ylim.get(metric, 0), stats.values.min())
             max_ylim[metric] = max(max_ylim.get(metric, 0), stats.values.max())
