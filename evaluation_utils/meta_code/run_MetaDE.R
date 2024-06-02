@@ -2,39 +2,43 @@
 # Rscript /home/yuliya/repos/cosybio/FedProt/evaluation/Meta_DE/run_MetaDE.R /home/yuliya/repos/cosybio/FedProt/evaluation/Meta_DE/balanced/ lab_A lab_E lab_B lab_D lab_C &&
 # Rscript /home/yuliya/repos/cosybio/FedProt/evaluation/Meta_DE/run_MetaDE.R /home/yuliya/repos/cosybio/FedProt/evaluation/Meta_DE/imbalanced/ lab_A lab_E lab_D lab_B lab_C  
 
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(purrr))
 
 args <- commandArgs(trailingOnly = TRUE)
 w_dir <- args[1] #
 cohorts <- args[2:length(args)] # all but 1st arguments are cohort names
 
-#suppressPackageStartupMessages(library("MetaDE"))
+# suppressPackageStartupMessages(library("MetaDE"))
 
-log2FC <- data.frame()
-pvals <- data.frame()
-pvals_sca <- data.frame()
+log2FC <- NULL
+pvals <- NULL
 
-for (cohort in cohorts){ #,"Other")){
-    fname <- paste0(w_dir, cohort, "_res.tsv")
-    res <- read.table(fname, row.names = 1, sep="\t", header=TRUE)
-
-    lfc <- res["logFC"]
-    # pv <- res["P.Value"]
-    pv <- res["sca.P.Value"]  
-    #res$rank <- c(1:dim(res)[[1]])
-    #rank <- res["rank"]
-    if (dim(log2FC)[[2]] == 0) {
-        log2FC <- lfc
-        pvals <- pv
-    } else {
-        lfc <- lfc[rownames(log2FC),]
-        log2FC <-  cbind(log2FC, lfc)
-        pv <- pv[rownames(pvals),] 
-        pvals <-  cbind(pvals, pv)
-    }
+for (cohort in cohorts) {
+  fname <- paste0(w_dir, cohort, "_res.tsv")
+  res <- read.table(fname, row.names = 1, sep="\t", header = TRUE)
+  res$ID <- rownames(res)
+  
+  lfc <- res[, c("ID", "logFC")]
+  pv <- res[, c("ID", "sca.P.Value")]
+  
+  if (is.null(log2FC)) {
+    log2FC <- lfc  
+    pvals <- pv
+  } else {
+    log2FC <- full_join(log2FC, lfc, by = "ID") 
+    pvals <- full_join(pvals, pv, by = "ID") 
+  }
 }
+
+rownames(log2FC) <- log2FC$ID
+rownames(pvals) <- pvals$ID
+pvals$ID <- NULL
+log2FC$ID <- NULL
 
 colnames(log2FC) <- cohorts
 colnames(pvals) <- cohorts
+
 log2FC <- as.matrix(log2FC)
 pvals <- as.matrix(pvals)
 
@@ -54,7 +58,6 @@ MetaDE.pvalue <-function(x, meta.method, rth=NULL, parametric=TRUE) {
   if (parametric) x$bp <- NULL     
   nm <- length(meta.method)
   meta.res <- list(stat=NA, pval=NA, FDR=NA, AW.weight=NA)
-  meta.res$stat <- meta.res$pval <-meta.res$FDR <-matrix(NA, nrow(x$p), nm)
   for(i in 1:nm){
     temp <- switch(meta.method[i],
                  maxP={get.maxP(x$p,x$bp)}, minP={get.minP(x$p,x$bp)},
@@ -67,18 +70,20 @@ MetaDE.pvalue <-function(x, meta.method, rth=NULL, parametric=TRUE) {
                  Stouffer={get.Stouff(x$p,x$bp)},
                  Stouffer.OC={get.Stouff.OC(x$p,x$bp)},
                  SR={get.SR(x$p,x$bp)},PR={get.PR(x$p,x$bp)})
+    
+    meta.res$stat <- meta.res$pval <-meta.res$FDR <-matrix(NA, length(temp$pval), nm)
     meta.res$stat[,i]<-temp$stat
     meta.res$pval[,i]<-temp$pval
-    meta.res$FDR[,i]<-temp$FDR
+    meta.res$FDR[,i] <- temp$FDR
     if(meta.method[i] == "AW"){
       meta.res$AW.weight <- temp$AW.weight
     }
   }
   colnames(meta.res$stat) <- colnames(meta.res$pval) <- colnames(meta.res$FDR) <- meta.method
-  rownames(meta.res$stat) <- rownames(meta.res$pval) <- rownames(meta.res$FDR) <- rownames(x$p)   
+  rownames(meta.res$stat) <- rownames(meta.res$pval) <- rownames(meta.res$FDR) <- names(temp$pval)   
   attr(meta.res,"nstudy") <- K
   attr(meta.res,"meta.method") <- meta.method 
-  res<-list(meta.analysis=meta.res, ind.p=x$p)	 
+  res<-list(meta.analysis=meta.res, ind.p = x$p[names(temp$pval),])	 
   #class(res)<-"MetaDE.pvalue"
   return(res)
 }
@@ -93,6 +98,7 @@ check.parametric <- function(meta.method,parametric) {
 }
 
 get.Stouff<-function(p, bp=NULL, miss.tol=0.3){
+  p <- na.omit(p)
 	k <- ncol(p)
 	pval <- stat <- rep(NA, ncol(p))
 	if(!is.null(bp)){
@@ -113,7 +119,7 @@ get.Stouff<-function(p, bp=NULL, miss.tol=0.3){
         sum(qnorm(x), na.rm=T) / sqrt(sum(!is.na(x)))
 		})
 		qval <- p.adjust(pval, method="BH")
-		res <- list(stat=stat, pval=pval, FDR=qval)
+		res <- list(stat=na.omit(stat), pval=na.omit(pval), FDR=na.omit(qval))
 	}
 	  names(res$stat) <- names(res$pval) <- names(res$FDR) <- rownames(p)
     return(res)

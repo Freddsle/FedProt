@@ -4,24 +4,27 @@
 
 
 suppressPackageStartupMessages(library(RankProd))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(purrr))
 
 args <- commandArgs(trailingOnly = TRUE)
 w_dir <- args[1] #
 cohorts <- args[2:length(args)] # all but 1st arguments are cohort names
 
-lfcs <- data.frame()
-for (cohort in cohorts){ 
-    fname <- paste0(w_dir,cohort,"_res.tsv")
-    res <- read.table(fname, row.names = 1, sep="\t", header = TRUE)
-    lfc <- res["logFC"]
-    if (dim(lfcs)[[2]] == 0) {
-        lfcs <- lfc
-    }
-    else{
-     lfc <- lfc[rownames(lfcs),]       
-     lfcs<-  cbind(lfcs, lfc)
-    }
+lfcs <- NULL
+for (cohort in cohorts) {
+  fname <- paste0(w_dir, cohort, "_res.tsv")
+  res <- read.table(fname, row.names = 1, sep="\t", header = TRUE)
+  res$ID <- rownames(res)
+  lfc <- res[, c("ID", "logFC")]
+  if (is.null(lfcs)) {
+    lfcs <- lfc
+  } else {
+    lfcs <- full_join(lfcs, lfc, by = "ID")
+  }
 }
+rownames(lfcs) <- lfcs$ID
+lfcs$ID <- NULL
 colnames(lfcs) <- cohorts
 lfcs <- as.matrix(lfcs)
 
