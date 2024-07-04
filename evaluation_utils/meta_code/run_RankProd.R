@@ -41,5 +41,7 @@ avgL2FC <- RP_obj_lfc$AveFC
 colnames(avgL2FC) <- c("avgL2FC")
 result <- cbind(pvals,fdr,avgL2FC)
 dim(result)
-write.table(result,paste0(w_dir,"/MA_RankProd.tsv"),row.names=TRUE,sep="\t", quote = FALSE,dec = ".")
+result <- as.data.frame(result)
+result$ID <- rownames(result)
+write.table(result,paste0(w_dir,"/MA_RankProd.tsv"),row.names=F,sep="\t", quote = FALSE,dec = ".")
 	

@@ -269,6 +269,7 @@ def fit_contrasts(beta, contrast_matrix, cov_coef, ncoef, stdev_unscaled):
     cov_coef = contrast_matrix.T.dot(cov_coef).dot(contrast_matrix)    
 
     if orthog:
+        logging.info(".... design matrix is orthogonal")
         stdev_unscaled = np.sqrt((stdev_unscaled**2).dot(contrast_matrix**2))
     else:
         n_genes = beta.shape[0]

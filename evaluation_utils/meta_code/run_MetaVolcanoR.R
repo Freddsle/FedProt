@@ -32,7 +32,8 @@ meta_degs_comb <- combining_mv(diffexp=diffexplist,
                    draw="HTML")
 result <- meta_degs_comb@metaresult
 result <- result[order(result$metap),]
-write.table(result,paste0(w_dir,"/MA_CM.tsv"),row.names=TRUE, sep="\t", quote = FALSE)
+result$ID <- result$Symbol
+write.table(result,paste0(w_dir,"/MA_CM.tsv"),row.names=FALSE, sep="\t", quote = FALSE)
 dim(result)
 
 meta_degs_rem <- rem_mv(diffexp=diffexplist,
@@ -53,6 +54,7 @@ meta_degs_rem <- rem_mv(diffexp=diffexplist,
 
 result <- meta_degs_rem@metaresult
 result  <- result[order(result$randomP),]
-write.table(result,paste0(w_dir,"/MA_REM.tsv"),row.names=TRUE,sep="\t", quote = FALSE)
+result$ID <- result$Symbol
+write.table(result,paste0(w_dir,"/MA_REM.tsv"),row.names=FALSE,sep="\t", quote = FALSE)
 dim(result)
 

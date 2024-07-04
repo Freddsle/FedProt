@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np 
 from statsmodels.stats.multitest import multipletests
 
+from scipy.stats import mannwhitneyu
+
 import matplotlib.pyplot as plt
 from matplotlib.table import table
 from matplotlib.colors import LinearSegmentedColormap
@@ -18,7 +20,8 @@ def read_results(workdir,
                 rankprod_name="/MA_RankProd.tsv",
                 corrected_deqms_name=None,
                 only_two = False,
-                drop_na=True):
+                drop_na=True, 
+                simulated=False):
     logging.basicConfig(level=logging.INFO, format='%(message)s')
 
     df = {}
@@ -28,6 +31,7 @@ def read_results(workdir,
     df["pv_DEqMS"] = DEqMS["sca.adj.pval"]
     # df["pv_DEqMS"] = DEqMS["sca.P.Value"]
     df["lfc_DEqMS"] = DEqMS["logFC"]
+    df["AvgExpr_DEqMS"] = DEqMS["AveExpr"]
     logging.info(f"Results loaded for DEqMS with {DEqMS.shape[0]} proteins.")
 
     # FedProt
@@ -52,7 +56,10 @@ def read_results(workdir,
 
     # Fisher
     ma_cm = pd.read_csv(workdir+fisher_name, sep="\t")
-    ma_cm.index = ma_cm["Symbol"].values
+    if simulated:
+        ma_cm.index = ma_cm["Symbol"].values
+    else:
+        ma_cm.index = ma_cm["ID"].values
     df["lfc_Fisher"] = ma_cm["metafc"]
     _, adj_pval,_,_ = multipletests(ma_cm["metap"].values, alpha=0.05, method='fdr_bh',
                                     is_sorted=False, returnsorted=False)
@@ -61,7 +68,10 @@ def read_results(workdir,
 
     # REM
     ma_rem = pd.read_csv(workdir+rem_name, sep="\t")
-    ma_rem.index = ma_rem["Symbol"].values
+    if simulated:
+        ma_rem.index = ma_rem["Symbol"].values
+    else:       
+        ma_rem.index = ma_rem["ID"].values
     df["lfc_REM"] = ma_rem["randomSummary"]
     _, adj_pval, _, _ = multipletests(ma_rem["randomP"].values, alpha=0.05, method='fdr_bh',
                                       is_sorted=False, returnsorted=False)
@@ -69,22 +79,31 @@ def read_results(workdir,
     logging.info(f"Results loaded for REM with {ma_rem.shape[0]} proteins.")
 
     ### Stoufer 
-    stoufer  = pd.read_csv(workdir+stouffer_name, sep="\t", index_col=0)
+    if simulated:
+        stoufer  = pd.read_csv(workdir+stouffer_name, sep="\t", index_col=0)
+    else:
+        stoufer  = pd.read_csv(workdir+stouffer_name, sep="\t")
+        stoufer.index = stoufer["ID"].values
     df["pv_Stouffer"] = stoufer["FDR"]
     df["lfc_Stouffer"] = df["lfc_Fisher"]  # take logFC from MetaVolcanoR
     logging.info(f"Results loaded for Stouffer with {stoufer.shape[0]} proteins.")
 
     ### RankProd
-    rankprod  = pd.read_csv(workdir+rankprod_name, sep="\t", index_col=0)
+    if simulated:
+        rankprod  = pd.read_csv(workdir+rankprod_name, sep="\t", index_col=0)
+    else:
+        rankprod  = pd.read_csv(workdir+rankprod_name, sep="\t")
+        rankprod.index = rankprod["ID"].values
     rankprod["FDR"] = rankprod.loc[:,["down_reg.FDR","up_reg.FDR"]].min(axis=1)
     df["pv_RankProd"] = rankprod["FDR"]
     df["lfc_RankProd"] = rankprod["avgL2FC"] 
     logging.info(f"Results loaded for RankProd with {rankprod.shape[0]} proteins.")
-    
+
     df = pd.DataFrame.from_dict(df)
     if drop_na:
         df = df.dropna(axis=0)
 
+    # warning if adj.p-values are smaller than 0
     logging.info(f"Results loaded from {workdir} with {df.shape[0]} genes. Adj.p-values were not log-transformed.")
     return df
 
@@ -267,171 +286,101 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                 add_table=True, sharey=True, sharex=True,
                 comparsions=["pyr/glu", "pyr/glu"],
                 use_RMSE=False,
-                figsize=(10,4.5), after_comma=3,
-                titles = None
-    ):
-    
+                figsize=(11,4.5), after_comma=3,
+                set_lims=None,
+                titles=None):
+    """
+    Function to plot results based on different datasets and methods.
+    """
     logging.basicConfig(level=logging.INFO, format='%(message)s')
-
     fig, axes = plt.subplots(1, len(datasets), figsize=figsize, sharey=sharey)
-    i=0
-    se = 0 
-    results = {}
-    max_xlim = []
-    min_xlim = []
-    min_ylim = []
-    max_ylim = []
+    # plt.subplots_adjust(bottom=0.2)
 
     if what == "pv_":
         max_p_val = np.max(np.abs(dfs[datasets[0]]['pv_DEqMS']))
-        suptitle = "$-log_{10}(sca.adj.p-val.)$" if max_p_val > 1.1 else "sca.adj.p-val."
+        suptitle = "$-log_{10}(adj.p-val.)$" if max_p_val > 1.1 else "adj.p-val."
         logging.info(f"Plotting corrs using p-vals - {'log-transformed' if max_p_val > 1.1  else 'not log-transformed'}.")
-    else:
-        suptitle = "logFC"
+    elif what == "lfc_":
+        suptitle = "Log2FC"
         logging.info(f"Plotting corrs using logFC values.")
 
-
-    for k in datasets:
-        df = dfs[k].filter([f'{what}DEqMS']+[what+i for i in methods])
-        if titles:
-            axes[i].set_title(titles[i], fontsize=16)
-        else:
-            axes[i].set_title(k, fontsize=16)
-        rmse = {}
-        NRMSE = {}
-        
-        for j in range(len(methods)):
-            method = methods[j]
-            col = color_dict["Methods"][methods[j]]
-            x = df[what+"DEqMS"].values
-            y = df[what+method].values
-            rmse[method] = np.sqrt(np.sum((x-y)**2)/len(x))
-            NRMSE[method] = rmse[method] / (np.max(x) - np.min(x))
-            if what == "pv_":
-                axes[i].scatter(x = np.abs(x), y= np.abs(y),s=dotsize, color=col, alpha=0.5)
-            else:
-                axes[i].scatter(x = x, y= y,s=dotsize, color=col, alpha=0.5)
-        
+    for i, dataset in enumerate(datasets):
+        df = dfs[dataset].filter([f'{what}DEqMS']+[what+method for method in methods])
+        axes[i].set_title(titles[i] if titles else dataset, fontsize=16)
         axes[i].set_xlabel(f'{suptitle} {comparsions[i]}, \nDEqMS',fontsize=12)
         axes[i].set_ylabel(f'{suptitle} {comparsions[i]}, \nother methods',fontsize=12)
-        
-        if not sharex:
-            if what == "pv_":
-                max_deqms = np.max(np.abs(df[what+"DEqMS"].values))
-                min_deqms = np.min(np.abs(df[what+"DEqMS"].values))
+
+        mins = []
+        maxs = []
+
+        for method in methods:
+            x = df[what+"DEqMS"].values
+            y = df[what+method].values
+            if method == "FedProt":
+                # use triangle marker for FedProt
+                axes[i].scatter(x, y, s=1.5, color=color_dict["Methods"][method], alpha=0.6, edgecolors=color_dict["Methods"][method], 
+                                marker='^', label=method if i == 0 else "")
             else:
-                max_deqms = np.max(df[what+"DEqMS"].values)
-                min_deqms = np.min(df[what+"DEqMS"].values)
-            axes[i].set_xlim(min_deqms - max_deqms*0.01, max_deqms + max_deqms*0.1)
+                axes[i].scatter(x, y, s=dotsize, color=color_dict["Methods"][method], alpha=0.6, edgecolors=color_dict["Methods"][method],
+                                label=method if i == 0 else "")
+            
+            mins.append(np.min(y))
+            maxs.append(np.max(y))
 
-            if what == "pv_":
-                max_others = np.max(np.abs(df[[what+m for m in methods]].values))
-                min_others = np.min(np.abs(df[[what+m for m in methods]].values))
-            else:
-                max_others = np.max(df[[what+m for m in methods]].values)
-                min_others = np.min(df[[what+m for m in methods]].values)
-            axes[i].set_ylim(min_others - max_others*0.01, max_others + max_others*0.1)
+        y_min, y_max = min(mins) - max(maxs) * 0.01, max(maxs) + max(maxs) * 0.02
+        x_min, x_max = np.min(df[what+"DEqMS"]) - np.max(df[what+"DEqMS"]) * 0.01, np.max(df[what+"DEqMS"]) + np.max(df[what+"DEqMS"]) * 0.01
 
-        # Calculate correlations
-        corrs = df[[what+"DEqMS"]+[what+m for m in methods]].corr().loc[[what+"DEqMS"],]
-        corrs.rename(lambda x: x.replace(what,""), axis="columns",inplace = True)
-        corrs = corrs.T.to_dict()[what+'DEqMS']
-        rank_corrs = df[[what+"DEqMS"]+[what+m for m in methods]].corr(method="spearman").loc[[what+"DEqMS"],]
-        rank_corrs.rename(lambda x: x.replace(what,""), axis="columns",inplace = True)
-        rank_corrs = rank_corrs.T.to_dict()[what+'DEqMS']
+        axes[i].set_xlim(x_min, x_max)
+        axes[i].set_ylim(y_min, y_max)
 
+        # Adjust limits if necessary
+        if set_lims:
+            if len(set_lims[i]) == 2:
+                axes[i].set_xlim(set_lims[i][0], set_lims[i][1])
+                y_min, y_max = set_lims[i][0], set_lims[i][1]
+                x_min, x_max = set_lims[i][0], set_lims[i][1]
+                axes[i].set_ylim(set_lims[i][0], set_lims[i][1])
+
+        # Display table conditionally
         if add_table:
-            # Prepare data for table
-            data = {}
-            if use_RMSE:
-                colLabels = ["r", "ρ", 'NRMSE*']
-            else:
-                colLabels = ["r", "ρ"]
+            display_table(axes[i], df, methods, color_dict, what, use_RMSE, after_comma)
 
-            for j, method in enumerate(methods):
-                if use_RMSE:
-                    if what == "pv_":
-                        data[method] = [f"{round(corrs[method],after_comma)}", f"{round(rank_corrs[method],3)}", f"{round(NRMSE[method],3)}"]
-                    elif what == "lfc_":
-                        data[method] = [f"{round(corrs[method],4)}", f"{round(rank_corrs[method],4)}", f"{round(NRMSE[method],3)}"]
-                else:
-                    if what == "pv_":
-                        data[method] = [f"{round(corrs[method],after_comma)}", f"{round(rank_corrs[method],after_comma)}"]
-                    elif what == "lfc_":
-                        data[method] = [f"{round(corrs[method],4)}", f"{round(rank_corrs[method],4)}"]
+        # Plot identity line
+        axes[i].plot([x_min, x_max], [x_min, x_max], color="gray", ls="--", lw=0.2)
 
-            # Create table for each axes
-            the_table = table(
-                axes[i], 
-                cellText=list(data.values()),
-                colLabels=colLabels,
-                rowLabels=list(data.keys()),
-                cellLoc = 'center', rowLoc = 'right',
-                bbox=[0.6, 0.66, 0.4, 0.34],
-                cellColours=[['white'] * len(colLabels) for col in color_dict["Methods"]]
-            )
-            
-            # Set font size for the entire table
-            the_table.auto_set_font_size(False)
-            the_table.set_fontsize(10)  # Change this value as required
-
-            for j, label in enumerate(data.keys()):
-                cell = the_table.get_celld()[(j + 1, -1)]  # get the row label cell
-                cell.set_facecolor(color_dict["Methods"][label])  # set the row label background color
-                if label == "FedProt" or label == "RankProd":
-                    cell.get_text().set_color('white')  # set the row label text color 
-                else:
-                    cell.get_text().set_color('black')
-
-        else:               
-            if what == "lfc_":
-                axes[i].legend(methods, loc='lower right', title='Methods', fontsize=10, markerscale=8, markerfirst=False)
-            else:
-                axes[i].legend(methods, loc='upper right', title='Methods', fontsize=10, markerscale=8, markerfirst=False)
-            
-
-        i += 1
-        results[(k,"r")] = corrs
-        results[(k,"ρ")] = rank_corrs
-        if use_RMSE:
-            results[(k,"NRMSE*")] = pd.Series(NRMSE)
-
-        if what == "pv_":
-            max_xlim_method = np.max(np.abs(df[what+"DEqMS"].values))
-            min_xlin_method = np.min(np.abs(df[what+"DEqMS"].values))
-            min_ylim_dataset = np.min(np.abs(df[[what+m for m in methods]].values))
-            max_ylim_dataset = np.max(np.abs(df[[what+m for m in methods]].values))
-        else:
-            max_xlim_method = np.max(df[what+"DEqMS"].values)            
-            min_xlin_method = np.min(df[what+"DEqMS"].values)
-            min_ylim_dataset = np.min(df[[what+m for m in methods]].values)
-            max_ylim_dataset = np.max(df[[what+m for m in methods]].values)
-            
-        max_xlim.append(max_xlim_method + max_xlim_method*0.05)
-        min_xlim.append(min_xlin_method - abs(min_xlin_method*0.05))
-        min_ylim.append(min_ylim_dataset - abs(min_ylim_dataset*0.05))
-        max_ylim.append(max_ylim_dataset + max_ylim_dataset*0.05)
-            
-    if sharex:
-        for i in range(len(datasets)):
-            axes[i].set_xlim(min(min_xlim), max(max_xlim))
-            
-    if sharey:
-        for i in range(len(datasets)):
-            axes[i].set_ylim(min(min_ylim), max(max_ylim))
-
-    for i in range(len(datasets)):
-        axes[i].plot([min(min_xlim), max(max_xlim)], 
-                    [min(min_xlim), max(max_xlim)],
-                    color = "red",ls="--",lw=0.5)
     
-    results = pd.DataFrame.from_dict(results)
-    
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.1), 
+               title="\nMethods", fontsize="large", markerscale=5, frameon=False, title_fontsize="large", ncol=len(methods))
+
     if text:
-        tmp = axes[0].text(-0.2*np.max(df.values), np.max(df.values), text, fontsize=24)
-        
+        plt.figtext(0.5, 0.01, text, ha="center", fontsize=12)
+
     plt.tight_layout()
-    return results.loc[methods,]
+    plt.show()
+
+
+def display_table(ax, df, methods, color_dict, what, use_RMSE, after_comma):
+    """
+    Function to display a table of statistics on the given axis.
+    """
+    data = {}
+    colLabels = ["r", "ρ"] + (['NRMSE*'] if use_RMSE else [])
+    for method in methods:
+        corr = df[[what+"DEqMS", what+method]].corr().iloc[0, 1]
+        rho = df[[what+"DEqMS", what+method]].corr(method='spearman').iloc[0, 1]
+        row = [round(corr, after_comma), round(rho, after_comma)]
+        if use_RMSE:
+            rmse = np.sqrt(np.mean((df[what+"DEqMS"].values - df[what+method].values)**2))
+            nrmse = rmse / (df[what+"DEqMS"].max() - df[what+"DEqMS"].min())
+            row.append(round(nrmse, after_comma))
+        data[method] = row
+
+    cell_colors = [[color_dict["Methods"][method] for _ in colLabels] for method in methods]
+    the_table = ax.table(cellText=list(data.values()), colLabels=colLabels, rowLabels=methods, cellLoc='center', loc='top', cellColours=cell_colors)
+    the_table.auto_set_font_size(False)
+    the_table.set_fontsize(8)
+    the_table.scale(1, 1.5)
 
 
 def calc_stats_TOP(
@@ -610,4 +559,120 @@ def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
     if figfile:
         fig.savefig(figfile)
 
+    plt.show()
+
+
+
+def calc_diffs_for_plotting(log_dfs, methods, what):
+    plot_data = []
+    for dataset_name, dataset in log_dfs.items():
+        for method in methods:
+            for q in [0.25, 0.75]:
+                low_expr = dataset[dataset['AvgExpr_DEqMS'] < dataset['AvgExpr_DEqMS'].quantile(q)]
+                high_expr = dataset[dataset['AvgExpr_DEqMS'] >= dataset['AvgExpr_DEqMS'].quantile(q)]
+
+                diff_high = abs(high_expr[f'{what}{method}'] - high_expr[f'{what}DEqMS'])
+                for value in diff_high:
+                    plot_data.append((dataset_name, method, 'High', q, value))
+
+                diff_low = abs(low_expr[f'{what}{method}'] - low_expr[f'{what}DEqMS'])
+                for value in diff_low:
+                    plot_data.append((dataset_name, method, 'Low', q, value))
+
+    return plot_data
+
+def get_significance_level(p_value):
+    if p_value < 0.001:
+        return '***'
+    elif p_value < 0.01:
+        return '**'
+    elif p_value < 0.05:
+        return '*'
+    else:
+        return ''  # not significant
+
+
+def plot_exp_diffs(log_dfs, what="pv_", methods=["FedProt", "Fisher", "Stouffer", "REM", "RankProd"], figsize=(17, 6), figfile=None):
+    plot_data = calc_diffs_for_plotting(log_dfs, methods, what)
+    plot_df = pd.DataFrame(plot_data, columns=['Dataset', 'Method', 'Expr_Level', 'Quantile', 'Diffs'])
+    datasets = plot_df['Dataset'].unique()
+
+    fig, axes = plt.subplots(len(datasets), len(methods), figsize=figsize, sharey=False)
+    p_values = []
+    mean_diffs = []
+
+    for row, dataset in enumerate(datasets):
+        for col, method in enumerate(methods):
+            ax = axes[row, col]
+            method_data = plot_df[(plot_df['Method'] == method) & (plot_df['Dataset'] == dataset)]
+            high_diff = method_data[method_data['Expr_Level'] == 'High']['Diffs'].values
+            low_diff = method_data[method_data['Expr_Level'] == 'Low']['Diffs'].values
+            
+            stat, p_value = mannwhitneyu(high_diff, low_diff,    alternative='two-sided')
+
+            # Calculate effect size (r)
+            N = len(high_diff) + len(low_diff)
+            Z = (stat - (len(high_diff)*len(low_diff)/2)) / np.sqrt(len(high_diff)*len(low_diff)*(N + 1)/12)
+            r = Z / np.sqrt(N)
+
+            p_values.append((dataset, method, p_value))
+
+            mean_high_diff = np.mean(high_diff)
+            mean_low_diff = np.mean(low_diff)
+            median_high_diff = np.median(high_diff)
+            median_low_diff = np.median(low_diff)
+            significance_level = get_significance_level(p_value)
+            mean_diffs.append((significance_level, dataset, method, mean_high_diff, mean_low_diff, median_high_diff, median_low_diff, r))
+
+            ax.boxplot([high_diff, low_diff], labels=['High Expr\n(25% quantile)', 'Low Expr\n(75% quantile)'])
+            if row == len(datasets) - 1:
+                ax.set_xlabel('Expression Level (DEqMS-based)')
+            if col == 0:
+                if what == 'lfc_':
+                    ax.set_ylabel('Abs Log2FC Diff\n{}'.format(dataset))
+                elif what == 'pv_':
+                    ax.set_ylabel('Abs -log10(adj.p-value) Diff\n{}'.format(dataset))
+            ax.set_title(f"{method}{significance_level}")
+
+    plt.tight_layout()
+    if figfile:
+        plt.savefig(figfile)
+    plt.show()
+
+    return p_values, mean_diffs
+
+
+def plot_ma_plots(log_dfs, what="lfc_", methods=["FedProt", "Fisher", "REM"], lfc_thr=0.5, adj_pval_thr=0.05, 
+                  figsize=(15, 5), figfile=None):
+    num_datasets = len(log_dfs)
+    num_methods = len(methods)
+    fig, axes = plt.subplots(num_datasets, num_methods, figsize=figsize)
+    
+    if num_datasets == 1 and num_methods == 1:
+        axes = np.array([[axes]])
+    elif num_datasets == 1:
+        axes = np.array([axes])
+    elif num_methods == 1:
+        axes = np.array([[ax] for ax in axes])
+    
+    for i, (dataset_name, dataset) in enumerate(log_dfs.items()):
+        for j, method in enumerate(methods):
+            ax = axes[i, j]
+            x = dataset['AvgExpr_DEqMS']
+            y = dataset[f'{what}{method}']
+            pval = dataset[f'pv_{method}']
+            color = np.where((pval > -np.log10(adj_pval_thr[i])) & (abs(y) > lfc_thr[i]), 'red', 'blue')
+            
+            ax.scatter(x, y, c=color, s=1, alpha=0.5)
+            ax.set_xlabel('log2 Average Protein Intensity')
+            if what == 'lfc_':
+                ax.set_ylabel(f'Log2FC, {method}')
+            elif what == 'pv_':
+                ax.set_ylabel(f'-log10(p-value), {method}')
+            ax.set_title(f'MA Plot, {dataset_name}')
+            ax.axhline(0, color='grey', lw=0.5)
+    
+    plt.tight_layout()
+    if figfile:
+        fig.savefig(figfile)
     plt.show()
