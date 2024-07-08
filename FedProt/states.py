@@ -45,84 +45,183 @@ class InitialState(AppState):
             count_file_path = counts_path,
             annotation_file_path = os.path.join(MOUNT_DIR, self.load('design_name')),
             experiment_type = self.load('experiment_type'),
-            log_transformed = self.load('log_transformed')
+            log_transformed = self.load('log_transformed'),
+            ref_type = self.load('ref_type'),
+            plex_column = self.load('plex_column'),
+            target_classes = self.load('target_classes')
         ) 
         self.log(f"Data read! {client.intensities.shape[1]} samples, {client.intensities.shape[0]} proteins")
 
         # store client
         self.store(key='client', value=client)
-        # self.configure_smpc()
+
+        # get client's counts
+        counts = client.get_min_count()
+        self.log("Counts are computed...")
 
         # send list of protein names (genes) to coordinator
-        self.log("[initial] Sending the protein names list to the coordinator")
-        self.send_data_to_coordinator(client.prot_names, send_to_self=True, use_smpc=False)
+        if self.load('experiment_type') == "TMT":
+            self.log("[initial] Sending the counts, protein names list and plexes to the coordinator")
+            self.send_data_to_coordinator((counts.to_dict(), client.prot_names, client.tmt_names),
+                                           send_to_self=True, use_smpc=False)
+        else:
+            self.log("[initial] Sending the counts and protein names list to the coordinator")
+            self.send_data_to_coordinator((counts.to_dict(), client.prot_names),
+                                          send_to_self=True, use_smpc=False)       
 
         # initialize app
         if self.is_coordinator:
-            self.log("Transition to creation common proteins list...")
-            return 'common_proteins'
+            self.log("Transition to the next step...")
+            return 'GetCountsProteinsPlexesState'
         self.log("Transition to validation...")
         return 'validation'
-        
+
     def read_config(self):
         self.log("Reading config...")
         config = bios.read(os.path.join(MOUNT_DIR, CONFIG_FILE))
         config = config["fedprot"]
-            
-        self.store(key='experiment_type', value=config['experiment_type'])
-        self.store(key='remove_single_pep_protein', value=config['remove_single_pep_protein'])
-        
+
         self.store(key='intensities_name', value=config['intensities'])
+        self.store(key='design_name', value=config['design'])
         self.store(key='use_counts', value=config['use_counts'])
         if config['use_counts']:
             self.store(key='counts_name', value=config['counts'])
-        self.store(key='design_name', value=config['design'])
-        self.store(key='sep', value=config['sep'])
 
+        self.store(key='sep', value=config['sep'])
+        self.store(key='result_table', value=config['result_table'])
+
+        self.store(key='max_na_rate', value=config['max_na_rate'])
+        self.store(key='log_transformed', value=config['log_transformed'])
+
+        self.store(key='experiment_type', value=config['experiment_type'])
+
+        if config['experiment_type'] == "TMT":
+            self.store(key='ref_type', value=config['ref_type'])
+            self.store(key='plex_covariate', value=config['plex_covariate'])
+            self.store(key='plex_column', value=config['plex_column'])
+
+            self.store(key='use_median', value=config['use_median'])
+            self.store(key='use_irs', value=config['use_irs'])
+        else:
+            self.store(key='ref_type', value=None)
+            self.store(key='plex_column', value=None)
+            self.store(key='use_median', value=False)
+            self.store(key='use_irs', value=False)
+
+        self.store(key='remove_single_pep_protein', value=config['remove_single_pep_protein'])
         self.store(key='target_classes', value=config['target_classes'])
         self.store(key='covariates', value=config['covariates'])
 
-        self.store(key='max_na_rate', value=config['max_na_rate'])
+        self.store(key='only_shared_proteins', value=config['only_shared_proteins'])
+
         self.store(key='use_smpc', value=config['use_smpc'])
-        self.store(key='log_transformed', value=config['log_transformed'])
-        
-        self.store(key='result_table', value=config['result_table'])
-        
+        self.log("Config read!")
+        self.log(f"Experiment type: {self.load('experiment_type')}; Shared proteins only: {self.load('only_shared_proteins')}")
 
-@app_state(name='common_proteins')
-class CommonProteinsState(AppState):
+
+@app_state(name='get_counts')
+class GetCountsProteinsPlexesState(AppState):
+    """
+    Collects counts and protein lists from all clients.
+    Additionally, if experiment type is "TMT" - collect plex names.
+    """
+    
     def register(self):
-        self.register_transition('validation', role=Role.COORDINATOR,
-                                 label='Broadcasting common proteins list')
-
+        self.register_transition('validation', role=Role.COORDINATOR)
+    
     def run(self):
-        self.log("[common_proteins] Gathering proteins lists from all clients")
-        list_of_features_lists = self.gather_data(is_json=False)
-        self.log("[common_proteins] Gathering done!")
+        self.log("[get_counts] Start collecting counts and protein lists...")
+        experiment_type = self.load('experiment_type')
+        plex_covariate = self.load('plex_covariate')
+        
+        if experiment_type == "TMT" and plex_covariate:
+            list_of_counts, list_of_proteins, list_of_plexes = self.collect_tmt_data()
+        else:
+            list_of_counts, list_of_proteins = self.collect_non_tmt_data()
+        
+        self.log("[get_counts] Gathering done!")
+        client_list = self.update_client_list()
+        self.store(key='client_list', value=client_list)
+        
+        if experiment_type == "TMT" and plex_covariate:
+            plex_covariates_list = self.aggregate_plex_covariates(list_of_plexes)
+            self.store(key='plex_covariates_list', value=plex_covariates_list)            
+        
+        global_min_counts = self.aggregate_counts(list_of_counts)
+        self.store(key='min_counts', value=global_min_counts)
+        
+        prot_names = self.aggregate_protein_groups(list_of_proteins)
+        self.store(key='protein_groups', value=prot_names)
 
+        variables = self.load_and_store_variables()
+        self.store(key='variables', value=variables)
+        
+        self.log("Transition to validation ...")
+        if experiment_type == "TMT" and plex_covariate:
+            self.broadcast_data((client_list, prot_names, global_min_counts.to_dict(), 
+                                 variables, plex_covariates_list), 
+                                send_to_self=True, memo="ProteinsCounts")
+        else:
+            self.broadcast_data((client_list, global_min_counts.to_dict(), prot_names, variables), 
+                                send_to_self=True, memo="ProteinsCounts")
+        return 'validation'
+    
+    def collect_tmt_data(self):
+        list_of_counts_proteins_plexes = self.gather_data(is_json=False, use_smpc=False)
+        list_of_counts = [counts for counts, _, _ in list_of_counts_proteins_plexes]
+        list_of_proteins = [proteins for _, proteins, _ in list_of_counts_proteins_plexes]
+        list_of_plexes = [plexes for _, _, plexes in list_of_counts_proteins_plexes]
+        return list_of_counts, list_of_proteins, list_of_plexes
+    
+    def collect_non_tmt_data(self):
+        list_of_counts_proteins = self.gather_data(is_json=False, use_smpc=False)
+        list_of_counts = [counts for counts, _ in list_of_counts_proteins]
+        list_of_proteins = [proteins for _, proteins in list_of_counts_proteins]
+        return list_of_counts, list_of_proteins
+    
+    def update_client_list(self):
         # move the coodinator cohort name to the 0 place in the list of self.clients
         cohort_name = self.id
         client_list = [cohort_name] + [client for client in self.clients if client != cohort_name]
-        self.store(key='client_list', value=client_list)
         self.log(f'List of clients: {client_list}')
-
-        prot_names = utils.get_common_proteins(list_of_features_lists)
-
-        print(f"[common_proteins] Common proteins list was created. Number of proteins: {len(prot_names)}")
-        self.store(key='common_proteins', value=prot_names)
-
-        # load target classes and broadcast them to all clients
+        return client_list
+    
+    def aggregate_plex_covariates(self, list_of_plexes):
+        self.log("Start aggregation of plex covariates...")
+        plex_covariates_list = []
+        for plexes in list_of_plexes:
+            plex_covariates_list.extend(plexes)
+        plex_covariates_list = sorted(list(set(plex_covariates_list)))
+        self.log(f"Size of plex covariates list: {len(plex_covariates_list)}")
+        return plex_covariates_list
+    
+    def aggregate_counts(self, list_of_counts):
+        self.log("Start aggregation of counts...")
+        min_counts = [pd.DataFrame.from_dict(local_counts, orient='index') for local_counts in list_of_counts]
+        global_min_counts = pd.concat(min_counts, axis=1).min(axis=1)
+        prot_names = self.load('prot_names')
+        global_min_counts = global_min_counts[prot_names]
+        if global_min_counts.min() == 0:
+            global_min_counts += 1
+        self.log(f"Size of global min counts: {global_min_counts.shape}")
+        return global_min_counts
+    
+    def aggregate_protein_groups(self, list_of_proteins):
+        self.log("Start aggregation of protein groups...")
+        prot_names = utils.get_analyzed_proteins(list_of_proteins, self.load('only_shared_proteins'))
+        self.log(f"Protein group list for analysis was created. Number of proteins: {len(prot_names)}")
+        return prot_names
+    
+    def load_and_store_variables(self):
+        self.log("Loading target classes and covariates...")
         target_classes = self.load("target_classes")
         covariates = self.load("covariates")
         variables = target_classes + covariates
+        return variables
 
-        self.store(key='variables', value=variables)
-
-        self.log("Transition to validation ...")
-        self.broadcast_data((client_list, prot_names, variables), send_to_self=True, memo="commonProteins")
-        return 'validation'
-
-
+############################################################################################################
+# Validation and filtering states
+############################################################################################################
 @app_state(name='validation')
 class ValidationState(AppState):
     def register(self):
@@ -131,12 +230,28 @@ class ValidationState(AppState):
     def run(self):
         self.log("Start validation...")
         # get list of common proteins from coordinator
-        client_list, stored_features, variables = self.await_data(n=1, is_json=False, memo="commonProteins")
+        if self.load('experiment_type') == "TMT" and self.load('plex_covariate'):
+            client_list, stored_features, global_min_counts, variables, plex_covariates = self.await_data(n=1, is_json=False, 
+                                                                                       memo="ProteinsCounts")
+        else:
+            client_list, stored_features, global_min_counts, variables = self.await_data(n=1, is_json=False, 
+                                                                      memo="ProteinsCounts")
         # load client data
         client = self.load('client')
+
+        # update counts if use_counts is True
+        if self.load('use_counts'):
+            client.counts = pd.DataFrame.from_dict(global_min_counts, orient='index').copy()
+
+        self.log(f"Data validation starts...")
         client.validate_inputs(stored_features, variables)
-        # add cohort effects to design
-        client.add_cohort_effects_to_design(client_list[1:])
+
+        # add cohort effect columns to each design matrix
+        # if plex_covariate exists, use this column as a cohort effect
+        if self.load('experiment_type') == "TMT" and self.load('plex_covariate'):
+            client.add_cohort_effect(plex_covariates, self.load('plex_covariate'))
+        else:
+            client.add_cohort_effect(client_list)
 
         self.log(f"Samples in {client.cohort_name} data: {len(client.sample_names)}")        
         self.log(f"Protein groups in {client.cohort_name} data:  {len(client.prot_names)}")
@@ -150,7 +265,7 @@ class ValidationState(AppState):
 class NACountState(AppState):
     def register(self):
         self.register_transition('prot_na_filtering', role=Role.COORDINATOR)
-        self.register_transition('compute_XtY_XTX', role=Role.PARTICIPANT)
+        self.register_transition('do_normalization', role=Role.PARTICIPANT)
     
     def run(self):
         self.log("Start NA counting...")
@@ -169,14 +284,14 @@ class NACountState(AppState):
             self.log(f"Transition to creation of list of proteins passed NA filter ({round(self.load('max_na_rate') * 100, 0)}%)...")
             return 'prot_na_filtering'
         
-        self.log("Transition to computation state...")
-        return 'compute_XtY_XTX'
+        self.log("Transition to normalization state...")
+        return 'do_normalization'
     
 
 @app_state(name='prot_na_filtering')
 class NAFilterState(AppState):
     def register(self):
-        self.register_transition('compute_XtY_XTX', role=Role.COORDINATOR)
+        self.register_transition('do_normalization', role=Role.COORDINATOR)
 
     def run(self):
         self.log("Start NA filtering...")
@@ -190,10 +305,119 @@ class NAFilterState(AppState):
         self.store(key='stored_features', value=keep_proteins)
         
         self.broadcast_data(keep_proteins, send_to_self=True, memo="KeepProteins")
+        self.log("Transition to normalization state...")
+        return 'do_normalization'
+
+############################################################################################################
+# Normalization states
+############################################################################################################
+@app_state(name='do_normalization')
+class NormalizationState(AppState):
+    def register(self):
+        self.register_transition('median_calculation', role=Role.BOTH)
+        self.register_transition('irs_normalization', role=Role.BOTH)
+        self.register_transition('compute_XtY_XTX', role=Role.BOTH)
+
+    def run(self):
+        keep_proteins = self.await_data(n=1, is_json=False, memo="KeepProteins")
+        client = self.load('client')
+        client.update_prot_names(keep_proteins)
+
+        if not self.load("use_median") and not self.load("use_irs"):
+            self.log("No normalization is needed...")
+            self.log("Transition to computation state...")
+            return 'compute_XtY_XTX'  
+
+        self.log("Start normalization...")        
+        if self.load("use_median"):
+            self.log("Transition to median calculation...")
+            return "median_calculation"
+        if self.load("use_irs"):
+            self.log("Transition to IRS normalization...")
+            return "irs_normalization"
+
+@app_state(name='median_calculation')
+class MedianCalculationState(AppState):
+    def register(self):
+        self.register_transition('global_median_calculation', role=Role.COORDINATOR)
+        self.register_transition('median_centering', role=Role.PARTICIPANT)
+
+    def run(self):
+        self.log("Start median normalization...")
+        client = self.load('client')
+        self.log("Computing local medians...")
+        avg_medians = client.compute_medians()
+        number_of_samples = len(client.sample_names)
+
+        self.log("Medians are computed, sending to coordinator...")
+        self.send_data_to_coordinator((avg_medians, number_of_samples),
+                                      send_to_self=True, use_smpc=False)
+
+        if self.is_coordinator:
+            self.log("Transition to global medians computation...")
+            return 'global_median_calculation'
+        self.log("Transition to median centering...")
+        return 'median_centering'
+
+@app_state(name='global_median_calculation')
+class GlobalMedianNormalizationState(AppState):
+    def register(self):
+        self.register_transition('median_centering', role=Role.COORDINATOR)
+
+    def run(self):
+        self.log("Start global median normalization...")
+        mead_samples_tuples = self.gather_data(use_smpc=False)
+        global_median = utils.aggregate_medians(mead_samples_tuples)
+        self.log("Global median is computed, sending to participants...")
+
+        self.broadcast_data(global_median, send_to_self=True, memo="GlobalMedian")
+        self.log("Transition to median centering...")
+        return 'median_centering'
+
+@app_state(name='median_centering')
+class MedianCenteringState(AppState):
+    def register(self):
+        self.register_transition('compute_XtY_XTX', role=Role.BOTH)
+        self.register_transition('irs_normalization', role=Role.BOTH)
+
+    def run(self):
+        self.log("Start median centering...")
+        global_median_mean = self.await_data(n=1, memo="GlobalMedian")
+        client = self.load('client')
+        client.mean_median_centering(global_median_mean)
+        self.log("Median normalization is done...")
+
+        if self.load("use_irs"):
+            self.log("Transition to IRS normalization...")
+            return 'irs_normalization'
+        
         self.log("Transition to computation state...")
-        return 'compute_XtY_XTX'  
+        return 'compute_XtY_XTX'
+
+@app_state(name='irs_normalization')
+class IRSNormalizationState(AppState):
+    def register(self):
+        self.register_transition('compute_XtY_XTX', role=Role.BOTH)
+
+    def run(self):
+        self.log("Start IRS normalization...")
+        client = self.load('client')
+        client.irsNorm_in_silico_single_center()
+        self.log("IRS normalization is done...")
+
+        self.log("Transition to computation state...")
+        return 'compute_XtY_XTX'
+
+############################################################################################################
+# Mask prepation states
+############################################################################################################
 
 
+
+
+############################################################################################################
+# Linear model states
+############################################################################################################
 @app_state(name='compute_XtY_XTX')
 class ComputeXtState(AppState):
     def register(self):
@@ -203,9 +427,7 @@ class ComputeXtState(AppState):
                                  label='Compute beta and beta stdev')
 
     def run(self):
-        keep_proteins = self.await_data(n=1, is_json=False, memo="KeepProteins")
         client = self.load('client')
-        client.update_prot_names(keep_proteins)
 
         self.log("Start computation of XtY and XTX...")
         client.prepare_for_limma(keep_proteins)
@@ -323,6 +545,10 @@ class AggregateSSEState(AppState):
         return 'make_contrasts'
 
 
+
+############################################################################################################
+# Apply contrasts states
+############################################################################################################
 @app_state(name='make_contrasts')
 class MakeContrastsState(AppState):
     """
@@ -372,7 +598,9 @@ class FitContrastsState(AppState):
         self.log("Transition to eBayes stage...")
         return 'ebayes'
 
-
+############################################################################################################
+# eBayes state
+############################################################################################################
 @app_state(name='ebayes')
 class eBayesState(AppState):
     def register(self):
@@ -415,54 +643,9 @@ class eBayesState(AppState):
             self.log("Transition to writing results...")
             return 'write_results'
 
-
-@app_state(name='get_counts')
-class GetCountsState(AppState):
-    def register(self):
-        self.register_transition('aggregate_counts', role=Role.COORDINATOR)
-        self.register_transition('write_results', role=Role.PARTICIPANT)
-
-    def run(self):
-        self.log("Start getting counts...")
-        client = self.load('client')
-        counts = client.get_min_count()
-        self.log("Counts are computed, sending to coordinator...")
-        self.send_data_to_coordinator(counts.to_dict(),  send_to_self=True, use_smpc=False)
-        
-        if self.is_coordinator:
-            self.log("Transition to aggregation of counts...")
-            return 'aggregate_counts'
-        
-        self.log("Transition to writing results...")
-        return 'write_results'
-
-
-@app_state(name='aggregate_counts')
-class AggregateCountsState(AppState):
-    def register(self):
-        self.register_transition('spectral_count_ebayes', role=Role.COORDINATOR)
-
-    def run(self):
-        self.log("Start aggregation of counts...")
-        list_of_counts = self.gather_data(is_json=False, use_smpc=False)
-        min_counts = list()
-
-        for local_counts in list_of_counts:
-            min_counts.append(pd.DataFrame.from_dict(local_counts, orient='index'))
-        global_min_counts = pd.concat(min_counts, axis=1)
-        # else:
-        #     # smpc case, already aggregated
-        #     global_min_counts = pd.DataFrame.from_dict(list_of_counts[0], orient='index')
-
-        self.log("Aggregation of counts is done...")
-        global_min_counts = global_min_counts.min(axis=1).loc[self.load('stored_features')] + 1
-        self.store(key='min_counts', value=global_min_counts)
-        self.log(f"Size of global min counts: {global_min_counts.shape}")
-
-        self.log("Transition to calculation of statistics based on counts...")
-        return 'spectral_count_ebayes'
-
-
+############################################################################################################
+# Spectral count eBayes state
+############################################################################################################
 @app_state(name='spectral_count_ebayes')
 class SpectralCounteBayesState(AppState):
     def register(self):
@@ -487,6 +670,9 @@ class SpectralCounteBayesState(AppState):
         return 'write_results'
 
 
+############################################################################################################
+# Writing results state
+############################################################################################################
 @app_state(name='write_results')
 class WriteResults(AppState):
     def register(self):

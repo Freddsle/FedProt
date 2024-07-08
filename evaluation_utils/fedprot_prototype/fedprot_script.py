@@ -135,7 +135,6 @@ for cohort_name in cohorts:
     # add list (as list of lists) of protein names
     prot_names.append(client.prot_names)
 
-
 if experiment_type == "TMT":
     if plex_covariate:
         plex_covariates_list = sorted(list(set(plex_covariates_list)))
@@ -159,12 +158,12 @@ if use_counts:
 # validate inputs and add cohort effects
 # apply filters
 list_of_na_counts_tuples = []
-total_samples = {}
 
 for c in cohorts:
     client = store_clients[c]
     if use_counts:
         client.counts = global_min_counts.copy()
+
     client.validate_inputs(prot_names, variables)
 
     # add cohort effect columns to each design matrix
@@ -183,8 +182,6 @@ for c in cohorts:
             min_f=max_na_rate, 
             remove_single_peptide_prots=remove_single_pep_protein
         )
-    # add each value from a dict to a list
-    total_samples[c] = sum(samples_per_class.values())
     # add both as a tuple to the list
     list_of_na_counts_tuples.append((
         na_count_in_variable.to_dict(orient='index'), samples_per_class))
@@ -219,16 +216,17 @@ for c in cohorts:
 # CLIENT SIDE
 # if TMT and use_median, compute medians
 if experiment_type == "TMT" and use_median:
-    # server nows about total_samples 
-    avg_medians = []
+    mead_samples_tuples = []
     for c in cohorts:
         client = store_clients[c]
-        avg_medians.append(client.compute_medians())
+        avg_median = client.compute_medians()
+        total_samples = len(client.sample_names)
+        mead_samples_tuples.append((avg_median, total_samples))
         
 # SERVER SIDE
 # if TMT and use_median, compute medians
 if experiment_type == "TMT" and use_median:
-    global_median_mean = utils.aggregate_medians(avg_medians, total_samples)
+    global_median_mean = utils.aggregate_medians(mead_samples_tuples)
 
 # CLIENT SIDE
 # if TMT and use_median, compute medians

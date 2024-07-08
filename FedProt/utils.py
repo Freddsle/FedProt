@@ -70,10 +70,16 @@ def filter_features_na_rate(list_of_na_counts_tuples, max_na_rate=0.8):
     return sorted(keep_proteins)
 
 
-def aggregate_medians(avg_medians, total_samples):
+def aggregate_medians(mead_samples_tuples):
+    avg_medians = list()
+    total_samples = list()
+    for medians, samples in mead_samples_tuples:
+        avg_medians.append(medians)
+        total_samples.append(samples)
+
     # Weighted Mean of medians
-    weighted_sum = np.sum(np.array(avg_medians) * np.array(list(total_samples.values())))
-    global_median_mean = weighted_sum / sum(total_samples.values())
+    weighted_sum = np.sum(np.array(avg_medians) * np.array(total_samples))
+    global_median_mean = weighted_sum / sum(total_samples)
     return global_median_mean
 
 
