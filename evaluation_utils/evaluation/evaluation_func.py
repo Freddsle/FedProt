@@ -287,6 +287,7 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                 comparsions=["pyr/glu", "pyr/glu"],
                 use_RMSE=False,
                 figsize=(11,4.5), after_comma=3,
+                show_legend=True,
                 set_lims=None,
                 titles=None):
     """
@@ -348,10 +349,10 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
         # Plot identity line
         axes[i].plot([x_min, x_max], [x_min, x_max], color="gray", ls="--", lw=0.2)
 
-    
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.1), 
-               title="\nMethods", fontsize="large", markerscale=5, frameon=False, title_fontsize="large", ncol=len(methods))
+    if show_legend:
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.1), 
+                title="\nMethods", fontsize="large", markerscale=5, frameon=False, title_fontsize="large", ncol=len(methods))
 
     if text:
         plt.figtext(0.5, 0.01, text, ha="center", fontsize=12)
@@ -376,10 +377,12 @@ def display_table(ax, df, methods, color_dict, what, use_RMSE, after_comma):
             row.append(round(nrmse, after_comma))
         data[method] = row
 
-    cell_colors = [[color_dict["Methods"][method] for _ in colLabels] for method in methods]
-    the_table = ax.table(cellText=list(data.values()), colLabels=colLabels, rowLabels=methods, cellLoc='center', loc='top', cellColours=cell_colors)
+    the_table = ax.table(cellText=list(data.values()), colLabels=colLabels, rowLabels=methods, 
+                         cellLoc = 'center', rowLoc = 'right',
+                         bbox=[0.2, 0.7, 0.3, 0.3],
+                         loc='top', cellColours=[['white'] * len(colLabels) for col in color_dict["Methods"]])
     the_table.auto_set_font_size(False)
-    the_table.set_fontsize(8)
+    the_table.set_fontsize(10)
     the_table.scale(1, 1.5)
 
 
