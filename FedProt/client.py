@@ -240,7 +240,8 @@ class Client:
     def validate_inputs(self, stored_features, variables):
         """
         Checks if protein_names match global protein group names.
-        Important to ensure that client's protein names are in the global protein names. But it's not important that all global protein names are in the client's protein names.
+        Important to ensure that client's protein names are in the global protein names. 
+        But it's not important that all global protein names are in the client's protein names.
         """
         # store variables for filtering
         self.variables = variables
@@ -350,7 +351,7 @@ class Client:
         logging.info(f"Client {self.cohort_name}:\tProtein groups supported by a single peptide will be excluded.")
         proteins_passing_filter = self.counts[self.counts > 1].index
         self.intensities = self.intensities.loc[proteins_passing_filter]
-        self.counts = self.counts[proteins_passing_filter]
+        self.counts = self.counts.loc[proteins_passing_filter]
         logging.info(f"Client {self.cohort_name}:\tProtein groups after filter: {len(self.intensities.index)}")
 
     def check_not_na(self, sample_type="sample"):
@@ -426,7 +427,9 @@ class Client:
         else:
             self.prot_names = passed_prots
             if self.use_counts:
-                self.counts = self.counts[self.prot_names]
+                logging.info(f"Client {self.cohort_name}: Updating counts.")
+                logging.info(f"Client {self.cohort_name}: Protein groups: {len(self.prot_names)}, Counts shape: {self.counts.shape}")
+                self.counts = self.counts.loc[self.prot_names]
             self.intensities = self.intensities.loc[self.prot_names, self.design.index]
 
         if self.experiment_type == EXPERIMENT_TYPE and self.ref_type != "in_silico_reference":
@@ -438,7 +441,9 @@ class Client:
     ######## Median Centering ###########
     def compute_medians(self):
         # computes and stores sample medians and returns their average
-        self.sample_medians = self.intensities.median(skipna=True)
+        self.sample_medians = self.intensities.median(skipna=True)  # sample-wise medians
+        logging.info(f"Client {self.cohort_name}:\tSample medians are computed.")
+        logging.info(f"Size of sample medians: {len(self.sample_medians)}")
         return np.mean(self.sample_medians)
 
     def mean_median_centering(self, global_mean_median):
@@ -447,10 +452,10 @@ class Client:
         self.intensities = self.intensities * global_mean_median
         logging.info(f"Client {self.cohort_name}:\tMedian centering is applied.")
 
-    # different version
-    def median_centering(self, global_median):
-        # R: sweep(log2(df.intensities+1), 2, sample_medians-global_median)
-        self.intensities = self.intensities - self.sample_medians + global_median
+    # # different version
+    # def median_centering(self, global_median):
+    #     # R: sweep(log2(df.intensities+1), 2, sample_medians-global_median)
+    #     self.intensities = self.intensities - self.sample_medians + global_median
 
     def count_leq_gt_samples(self, x):
         # leq - less or eqal x ;
@@ -581,11 +586,11 @@ class Client:
             if len(ndxs) > 0:
                 x = X[ndxs, :]
                 # column_variances = np.var(x, axis=0)
+                # zero_mask = column_variances == 0
                 column_means = np.mean(x, axis=0)
-                # zero_var_mask = column_variances == 0
-                zero_mean_mask = column_means == 0
-                if np.any(zero_mean_mask):
-                    mask_X[i, zero_mean_mask] = 1
+                zero_mask = column_means == 0
+                if np.any(zero_mask):
+                    mask_X[i, zero_mask] = 1
             else:
                 mask_X[i, :] = 1
 

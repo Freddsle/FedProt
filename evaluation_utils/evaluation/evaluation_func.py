@@ -492,7 +492,10 @@ def plot_stats_for_topN(dfs,
             if k == len(metrics) - 1:
                 tmp = axes[i].set_xlabel("number of top-ranked proteins", fontsize=14)
             if i == 0:
-                tmp = axes[i].set_ylabel(f"{metric}", fontsize=14)
+                if metric == "Jaccard":
+                    tmp = axes[i].set_ylabel(f"{metric} similarity coefficient", fontsize=14)
+                else:
+                    tmp = axes[i].set_ylabel(f"{metric}", fontsize=14)
                 if text:
                     tmp = axes[0].text(-0.15 * i_max, np.max(stats.values) * 1.0, text, fontsize=24)
             if i > 0 or k != len(metrics) - 1:
@@ -554,7 +557,7 @@ def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
         axes[i].set_xlabel("Number of top-ranked proteins", fontsize=14)
         axes[i].set_yticks(np.arange(0, 1.1, 0.1))
         if i == 0:
-            axes[i].set_ylabel("Jaccard similarity", fontsize=14)
+            axes[i].set_ylabel("Jaccard similarity coefficient", fontsize=14)
             axes[i].legend(title="Method")
 
         # add y ticks for the second plot (because they are shared and was removed by sharey=True)

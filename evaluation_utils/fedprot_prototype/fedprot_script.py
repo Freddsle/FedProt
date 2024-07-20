@@ -264,8 +264,7 @@ for c in cohorts:
     updated_masks = client.updated_mask(global_mask)
     list_of_masks.append(updated_masks)
 
-# SERVER SIDE
-mask_glob = utils.aggregate_masks(list_of_masks, n, k, second_round=True, used_SMPC=False)
+#############################################################
 
 # CLIENT SIDE
 XtX_XtY_list = []
@@ -280,7 +279,10 @@ for c in cohorts:
     logging.info(f"XtX and XtY have been computed for {client.cohort_name}")
     logging.info(f'Design colnames: {client.design.columns.values}')
 
+
 # SERVER SIDE
+mask_glob = utils.aggregate_masks(list_of_masks, n, k, second_round=True, used_SMPC=False)
+
 XtX_glob, XtY_glob = utils.aggregate_XtX_XtY(XtX_XtY_list, n, k, used_SMPC=False)
 logging.info("SERVER: XtX and XtY have been aggregated")
 logging.info('SERVER: Computing beta and stdev')
