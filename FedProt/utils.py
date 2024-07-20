@@ -3,13 +3,16 @@ import pandas as pd
 
 from scipy.special import digamma, polygamma
 from scipy.stats import t
+from scipy import linalg
 
 import statsmodels.api as sm
 from statsmodels.stats.multitest import multipletests
 
 import rpy2.robjects as robjects
+robjects.r.options(warn=-1)
 from rpy2.robjects.packages import importr
 from rpy2.robjects import conversion, default_converter
+
 
 import logging
 
@@ -17,13 +20,275 @@ logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S"
 )
 
-# Functions from server.py
+# get common proteins list
+def get_analyzed_proteins(list_of_features_lists, only_shared_proteins=False):
+    """
+    Get proteins list for the analysis from list of proteins lists.
+    :param list_of_features_lists: list of proteins lists
+    :param only_shared_proteins: if True, return only shared proteins
+    :return: list of proteins
+    """
+    prot_names = list()
+
+    if only_shared_proteins:
+        prot_names = list_of_features_lists[0]
+        for features_list in list_of_features_lists:
+            prot_names = sorted(list(set(prot_names) & set(features_list)))
+    else:
+        # use union of all proteins, not only shared
+        for features_list in list_of_features_lists:
+            if len(prot_names) == 0:
+                prot_names =  sorted(set(features_list))
+            else:
+                prot_names = sorted(list(set(prot_names) | set(features_list)))
+    return prot_names
+
+
+# filter features based on NA counts
+def filter_features_na_rate(list_of_na_counts_tuples, max_na_rate=0.8):
+    samples_per_target = dict()
+    prot_na_table = pd.DataFrame()
+
+    for na_pair in list_of_na_counts_tuples:
+        na_count_client = pd.DataFrame.from_dict(na_pair[0], orient='index')
+        samples_per_class_client = na_pair[1]
+
+        for key in samples_per_class_client:
+            samples_per_target[key] = samples_per_class_client[key] + samples_per_target.get(key, 0)
+        if prot_na_table.empty:
+            prot_na_table = na_count_client
+        else:
+            prot_na_table = na_count_client.add(prot_na_table)
+
+    # filter proteins based on NA counts
+    prot_na_table = prot_na_table.loc[:, samples_per_target.keys()]
+    samples_series = pd.Series(samples_per_target)
+    na_perc = prot_na_table.div(samples_series, axis=1)
+
+    keep_proteins = na_perc[na_perc.apply(lambda row: all(row < max_na_rate), axis=1)].index.values
+
+    return sorted(keep_proteins)
+
+
+def aggregate_medians(mead_samples_tuples):
+    avg_medians = list()
+    total_samples = list()
+    for medians, samples in mead_samples_tuples:
+        avg_medians.append(medians)
+        total_samples.append(samples)
+
+    # Weighted Mean of medians
+    weighted_sum = np.sum(np.array(avg_medians) * np.array(total_samples))
+    global_median_mean = weighted_sum / sum(total_samples)
+    return global_median_mean
+
+
+def aggregate_masks(list_of_masks, n, k, second_round=False, used_SMPC=False):
+    mask_glob = np.zeros((n, k))
+
+    if not used_SMPC:
+        # non-smpc case, need to aggregate
+        logging.info('SMPC is not used, aggregating masks')
+        for mask in list_of_masks:
+            mask_glob += mask
+    else:
+        # smpc case, already aggregated
+        mask_glob = list_of_masks[0]
+
+    if second_round:
+        mask_glob = mask_glob > 0
+    else:
+        mask_glob = mask_glob == len(list_of_masks)
+    return mask_glob
+
+# aggragate XtX and XtX
+def aggregate_XtX_XtY(list_of_xt_lists, n, k, used_SMPC):
+    
+    XtX_glob = np.zeros((n, k, k))
+    XtY_glob = np.zeros((n, k))
+    
+    # non-smpc case, need to aggregate
+    XtX_list = list()
+    XtY_list = list()
+
+    if not used_SMPC:
+        # non-smpc case, need to aggregate
+        logging.info('SMPC is not used, aggregating XtX and XtY')       
+        for i, pair in enumerate(list_of_xt_lists):
+            XtX_list.append(pair[0])
+            XtY_list.append(pair[1])
+
+        for i in range(0, len(list_of_xt_lists)):
+            XtX_glob += XtX_list[i] 
+            XtY_glob  += XtY_list[i]
+    else:
+        # smpc case, already aggregated
+        XtX_XtY_list = list_of_xt_lists[0]
+        XtX_glob += XtX_XtY_list[0]
+        XtY_glob += XtX_XtY_list[1]
+
+    return XtX_glob, XtY_glob
+
+
+# compute beta for lmfit
+def compute_beta_and_stdev(XtX_glob, XtY_glob, n, k, mask_glob):
+    stdev_unscaled = np.zeros((n, k))
+    beta = np.zeros((n, k))
+
+    for i in range(0, n):
+        mask = mask_glob[i, :]
+        submatrix = XtX_glob[i, :, :][np.ix_(~mask, ~mask)]
+
+        invXtX = linalg.inv(submatrix)
+        beta[i, ~mask] = invXtX @ XtY_glob[i, ~mask]
+ 
+        diagonal = np.diag(invXtX)
+        stdev_unscaled[i, ~mask] = np.sqrt(diagonal)   
+
+    logging.info(f"Detected partial NA coefficients for {mask_glob.any(axis=1).sum()} probe(s).")
+    return beta, stdev_unscaled
+
+
+# aggregate SSE and cov. coeficients
+def aggregate_SSE_and_cov_coef(list_of_sse_cov_coef, n, k, used_smpc, number_of_clients):
+    
+    SSE = np.zeros(n)
+    cov_coef = np.zeros((k, k))
+    n_measurements = np.zeros(n)
+    Amean = np.zeros(n)
+
+    if not used_smpc:
+        # non-smpc case, need to aggregate
+        SSE_list = []
+        cov_coef_list = []
+        n_measurements_list = []
+        intensities_sum = []
+
+        for pair in list_of_sse_cov_coef:
+            SSE_list.append(pair[0])
+            cov_coef_list.append(pair[1])
+            n_measurements_list.append(pair[2])
+            intensities_sum.append(pair[3])
+
+        for c in range(0, number_of_clients):
+            cov_coef += cov_coef_list[c]
+            Amean += intensities_sum[c]
+            n_measurements += n_measurements_list[c]
+            for i in range(0, n):
+                SSE[i] += SSE_list[c][i]   
+
+    else:
+        # smpc case, already aggregated
+        sse_cov_coef = list_of_sse_cov_coef[0]
+        for i in range(0, n):
+            SSE[i] += sse_cov_coef[0][i]   
+        cov_coef += sse_cov_coef[1]
+        Amean += sse_cov_coef[2]
+        n_measurements += sse_cov_coef[3]
+
+    return SSE, cov_coef, n_measurements, Amean
+
+# compute SSE and cov. coeficients
+def compute_SSE_and_cov_coef_global(cov_coef, SSE, Amean, n_measurements, n, mask_glob):
+    # estimated covariance matrix of beta
+    cov_coef = linalg.inv(cov_coef)
+    # estimated residual variance
+    var = SSE / (n_measurements - (~mask_glob).sum(axis=1))
+    # estimated residual standard deviations
+    sigma = np.sqrt(var)
+    # degrees of freedom
+    df_residual = np.ones(n) * (n_measurements - (~mask_glob).sum(axis=1))
+    # mean log-intensity
+    Amean = Amean / n_measurements
+
+    return sigma, cov_coef, df_residual, Amean, var
+
+
+def make_contrasts(target_classes, variables):
+    """
+    Creates contrast matrix given deisgn matrix and pairs or columns to compare.
+    For example:
+    contrasts = [([A],[B]),([A,B],[C,D])] defines two contrasts:
+    A-B and (A and B) - (C and D).
+    """
+    contrasts=[([target_classes[0]], [target_classes[1]])]
+    df = {}
+
+    for contr in contrasts:
+        group1, group2 = contr
+        for name in group1 + group2:
+            if not name in variables:
+                raise Exception(f"{name} not found in the design matrix.")
+        contr_name = "".join(map(str, group1)) + "_vs_" + "".join(map(str, group2))
+        c = pd.Series(data=np.zeros(len(variables)), index=variables)
+        c[group1] = 1
+        c[group2] = -1
+        df[contr_name] = c
+
+    return pd.DataFrame.from_dict(df)
+
 
 def cov2cor(cov_coef):
     cor = np.diag(cov_coef) ** -0.5 * cov_coef
     cor = cor.T * np.diag(cov_coef) ** -0.5
     np.fill_diagonal(cor, 1)
     return cor
+
+
+def check_orthogonality(cov_coef, ncoef):
+    # 	Correlation matrix of estimable coefficients
+    # 	Test whether design was orthogonal
+    if not np.any(cov_coef):
+        logging.warning(f".... no coef correlation matrix found in fit - assuming orthogonal...")
+        cormatrix = np.identity(ncoef)
+        orthog = True
+    else:
+        cormatrix = cov2cor(cov_coef)
+        if cormatrix.shape[0] * cormatrix.shape[1] < 2:
+            orthog = True
+        else:
+            if np.sum(np.abs(np.tril(cormatrix, k=-1))) < 1e-12:
+                orthog = True
+            else:
+                orthog = False
+    
+    logging.info(f".... orthogonality of design matrix is {orthog}")
+    return orthog, cormatrix
+
+
+def check_na_beta_stdev(beta, stdev_unscaled):
+    if np.any(np.isnan(beta)):
+        logging.info(f"NA coefficients found in fit - replacing with large (but finite) standard deviations")
+        beta = np.nan_to_num(beta, nan=0)
+        stdev_unscaled = np.nan_to_num(stdev_unscaled, nan=1e30)        
+    return beta, stdev_unscaled
+        
+
+def fit_contrasts(beta, contrast_matrix, cov_coef, ncoef, stdev_unscaled):
+
+    orthog, cormatrix = check_orthogonality(cov_coef, ncoef)
+    beta, stdev_unscaled = check_na_beta_stdev(beta, stdev_unscaled)
+    
+    # compute contrasts
+    beta = beta.dot(contrast_matrix)
+    # New covariance coefficiets matrix
+    cov_coef = contrast_matrix.T.dot(cov_coef).dot(contrast_matrix)    
+
+    if orthog:
+        logging.info(".... design matrix is orthogonal")
+        stdev_unscaled = np.sqrt((stdev_unscaled**2).dot(contrast_matrix**2))
+    else:
+        n_genes = beta.shape[0]
+        U = np.ones((n_genes, contrast_matrix.shape[1]))  # genes x contrasts
+        o = np.ones(ncoef)
+        R = np.linalg.cholesky(cormatrix).T
+
+        for i in range(0, n_genes):
+            RUC = R @ (stdev_unscaled[i,] * contrast_matrix.T).T
+            U[i,] = np.sqrt(o @ RUC**2)
+        stdev_unscaled = U
+
+    return beta, stdev_unscaled, cov_coef
 
 
 # eBays functions
@@ -456,4 +721,4 @@ def apply_multiple_test_correction(table, stored_features, return_sorted=False):
     if return_sorted:
         table.sort_values(by=["sca.adj.pval", "sca.P.Value"], inplace=True)
 
-    return table
+    return table    

@@ -1,0 +1,64 @@
+*.zip
+*.txt
+# *.csv
+*.xls
+*.xlsx
+# *.tsv
+*.tiff
+*.html
+*.pdf
+*.docx
+*.pptx
+
+# simulated data
+data/simulated_data/balanced/data/*
+data/simulated_data/imbalanced/data/*
+data/simulated_data/mild_imbalanced/data/*
+evaluation/simulated/mild_imbalanced/results
+evaluation/simulated/imbalanced/results/*
+evaluation/simulated/balanced/results/*
+evaluation/simulated/mild_imbalanced/meta/*
+evaluation/simulated/imbalanced/meta/*
+evaluation/simulated/balanced/meta/*
+
+# raw MS data
+**/00_raw_data/*
+
+# MQ file
+*.params
+*.speclib
+*).fasta
+data/bacterial_data/00_raw_data/README.md
+
+# R files
+*.Rproj
+*.Rhistory
+*.RData
+*.rds
+
+# Python files
+*.pyc
+
+# logs 
+*.log
+
+# config , axcept FedProt folder
+# *.json
+*.yaml
+*test_*.yml
+# except FedProt folder
+!FedProt/
+
+# files in archive folders
+**/archive/*
+
+# ignore all figures except in ./figures/ folder
+*.png
+*.tiff
+# *.svg
+*.jpg
+!figures/*.png
+!figures/*.svg
+
+# temporary notebooks (ipynb with tmp in name)
+*tmp*.ipynb
