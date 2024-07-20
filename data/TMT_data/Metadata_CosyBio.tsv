@@ -1,0 +1,67 @@
+Quantitative column name	Pool	Reporter ion	Patient	Group	Center
+Reporter intensity corrected 1 Pool1	Pool1	126	Common Reference	Common Reference	Center1
+Reporter intensity corrected 2 Pool1	Pool1	127N	heathy1	heathy	Center1
+Reporter intensity corrected 3 Pool1	Pool1	127C	FSGS1	FSGS	Center1
+Reporter intensity corrected 4 Pool1	Pool1	128N	heathy2	heathy	Center1
+Reporter intensity corrected 5 Pool1	Pool1	128C	FSGS2	FSGS	Center1
+Reporter intensity corrected 6 Pool1	Pool1	129N	heathy3	heathy	Center1
+Reporter intensity corrected 7 Pool1	Pool1	129C	FSGS3	FSGS	Center1
+Reporter intensity corrected 8 Pool1	Pool1	130N	heathy4	heathy	Center1
+Reporter intensity corrected 9 Pool1	Pool1	130C	FSGS4	FSGS	Center1
+Reporter intensity corrected 10 Pool1	Pool1	131N	heathy5	heathy	Center1
+Reporter intensity corrected 11 Pool1	Pool1	131C	FSGS5	FSGS	Center1
+Reporter intensity corrected 1 Pool2	Pool2	126	Common Reference	Common Reference	Center1
+Reporter intensity corrected 2 Pool2	Pool2	127N	heathy6	heathy	Center1
+Reporter intensity corrected 3 Pool2	Pool2	127C	FSGS6	FSGS	Center1
+Reporter intensity corrected 4 Pool2	Pool2	128N	heathy7	heathy	Center1
+Reporter intensity corrected 5 Pool2	Pool2	128C	FSGS7	FSGS	Center1
+Reporter intensity corrected 6 Pool2	Pool2	129N	heathy8	heathy	Center1
+Reporter intensity corrected 7 Pool2	Pool2	129C	FSGS8	FSGS	Center1
+Reporter intensity corrected 8 Pool2	Pool2	130N	heathy9	heathy	Center1
+Reporter intensity corrected 9 Pool2	Pool2	130C	FSGS9	FSGS	Center1
+Reporter intensity corrected 10 Pool2	Pool2	131N	heathy10	heathy	Center1
+Reporter intensity corrected 11 Pool2	Pool2	131C	FSGS10	FSGS	Center1
+Reporter intensity corrected 1 Pool3	Pool3	126	Common Reference	Common Reference	Center2
+Reporter intensity corrected 2 Pool3	Pool3	127N	heathy11	heathy	Center2
+Reporter intensity corrected 3 Pool3	Pool3	127C	FSGS11	FSGS	Center2
+Reporter intensity corrected 4 Pool3	Pool3	128N	heathy12	heathy	Center2
+Reporter intensity corrected 5 Pool3	Pool3	128C	FSGS12	FSGS	Center2
+Reporter intensity corrected 6 Pool3	Pool3	129N	heathy13	heathy	Center2
+Reporter intensity corrected 7 Pool3	Pool3	129C	FSGS13	FSGS	Center2
+Reporter intensity corrected 8 Pool3	Pool3	130N	heathy14	heathy	Center2
+Reporter intensity corrected 9 Pool3	Pool3	130C	FSGS14	FSGS	Center2
+Reporter intensity corrected 10 Pool3	Pool3	131N	heathy15	heathy	Center2
+Reporter intensity corrected 11 Pool3	Pool3	131C	FSGS15	FSGS	Center2
+Reporter intensity corrected 1 Pool4	Pool4	126	Common Reference	Common Reference	Center3
+Reporter intensity corrected 2 Pool4	Pool4	127N	heathy16	heathy	Center3
+Reporter intensity corrected 3 Pool4	Pool4	127C	FSGS16	FSGS	Center3
+Reporter intensity corrected 4 Pool4	Pool4	128N	heathy17	heathy	Center3
+Reporter intensity corrected 5 Pool4	Pool4	128C	FSGS17	FSGS	Center3
+Reporter intensity corrected 6 Pool4	Pool4	129N	heathy18	heathy	Center3
+Reporter intensity corrected 7 Pool4	Pool4	129C	FSGS18	FSGS	Center3
+Reporter intensity corrected 8 Pool4	Pool4	130N	heathy19	heathy	Center3
+Reporter intensity corrected 9 Pool4	Pool4	130C	FSGS19	FSGS	Center3
+Reporter intensity corrected 10 Pool4	Pool4	131N	heathy20	heathy	Center3
+Reporter intensity corrected 11 Pool4	Pool4	131C	FSGS20	FSGS	Center3
+Reporter intensity corrected 1 Pool5	Pool5	126	Common Reference	Common Reference	Center2
+Reporter intensity corrected 2 Pool5	Pool5	127N	heathy21	heathy	Center2
+Reporter intensity corrected 3 Pool5	Pool5	127C	FSGS21	FSGS	Center2
+Reporter intensity corrected 4 Pool5	Pool5	128N	heathy22	heathy	Center2
+Reporter intensity corrected 5 Pool5	Pool5	128C	FSGS22	FSGS	Center2
+Reporter intensity corrected 6 Pool5	Pool5	129N	heathy23	heathy	Center2
+Reporter intensity corrected 7 Pool5	Pool5	129C	FSGS23	FSGS	Center2
+Reporter intensity corrected 8 Pool5	Pool5	130N	heathy24	heathy	Center2
+Reporter intensity corrected 9 Pool5	Pool5	130C	FSGS24	FSGS	Center2
+Reporter intensity corrected 10 Pool5	Pool5	131N	heathy25	heathy	Center2
+Reporter intensity corrected 11 Pool5	Pool5	131C	FSGS25	FSGS	Center2
+Reporter intensity corrected 1 Pool6	Pool6	126	Common Reference	Common Reference	Center3
+Reporter intensity corrected 2 Pool6	Pool6	127N	heathy26	heathy	Center3
+Reporter intensity corrected 3 Pool6	Pool6	127C	FSGS26	FSGS	Center3
+Reporter intensity corrected 4 Pool6	Pool6	128N	heathy27	heathy	Center3
+Reporter intensity corrected 5 Pool6	Pool6	128C	FSGS27	FSGS	Center3
+Reporter intensity corrected 6 Pool6	Pool6	129N	heathy28	heathy	Center3
+Reporter intensity corrected 7 Pool6	Pool6	129C	FSGS28	FSGS	Center3
+Reporter intensity corrected 8 Pool6	Pool6	130N	heathy29	heathy	Center3
+Reporter intensity corrected 9 Pool6	Pool6	130C	FSGS29	FSGS	Center3
+Reporter intensity corrected 10 Pool6	Pool6	131N	heathy30	heathy	Center3
+Reporter intensity corrected 11 Pool6	Pool6	131C	FSGS30	FSGS	Center3

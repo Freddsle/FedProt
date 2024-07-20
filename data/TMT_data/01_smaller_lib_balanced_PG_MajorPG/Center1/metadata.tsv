@@ -1,0 +1,23 @@
+Quantitative.column.name	Pool	Reporter.ion	Patient	Group	Center
+P_1.RIC_1	Pool1	126	Common Reference	Common Reference	Center1
+P_1.RIC_2	Pool1	127N	heathy1	heathy	Center1
+P_1.RIC_3	Pool1	127C	FSGS1	FSGS	Center1
+P_1.RIC_4	Pool1	128N	heathy2	heathy	Center1
+P_1.RIC_5	Pool1	128C	FSGS2	FSGS	Center1
+P_1.RIC_6	Pool1	129N	heathy3	heathy	Center1
+P_1.RIC_7	Pool1	129C	FSGS3	FSGS	Center1
+P_1.RIC_8	Pool1	130N	heathy4	heathy	Center1
+P_1.RIC_9	Pool1	130C	FSGS4	FSGS	Center1
+P_1.RIC_10	Pool1	131N	heathy5	heathy	Center1
+P_1.RIC_11	Pool1	131C	FSGS5	FSGS	Center1
+P_2.RIC_1	Pool2	126	Common Reference	Common Reference	Center1
+P_2.RIC_2	Pool2	127N	heathy6	heathy	Center1
+P_2.RIC_3	Pool2	127C	FSGS6	FSGS	Center1
+P_2.RIC_4	Pool2	128N	heathy7	heathy	Center1
+P_2.RIC_5	Pool2	128C	FSGS7	FSGS	Center1
+P_2.RIC_6	Pool2	129N	heathy8	heathy	Center1
+P_2.RIC_7	Pool2	129C	FSGS8	FSGS	Center1
+P_2.RIC_8	Pool2	130N	heathy9	heathy	Center1
+P_2.RIC_9	Pool2	130C	FSGS9	FSGS	Center1
+P_2.RIC_10	Pool2	131N	heathy10	heathy	Center1
+P_2.RIC_11	Pool2	131C	FSGS10	FSGS	Center1

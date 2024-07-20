@@ -1,0 +1,29 @@
+fedprot:
+  counts: pg_counts.tsv
+  design: design.tsv
+  intensities: pg_intensities.tsv
+  sep: '\t'
+  
+  use_smpc: true
+  
+  max_na_rate: 0.8
+  log_transformed: false
+
+  experiment_type: 'TMT'
+  ref_type: 'in_silico_reference'
+  plex_covariate: true
+  plex_column: "Pool"
+  
+  use_median: true  # true
+  use_irs: true
+  remove_single_pep_protein: true
+  use_counts: true
+  
+  only_shared_proteins: false
+
+    # label: "Condition"
+  target_classes: ["heathy", "FSGS"]
+  covariates: []
+
+  result_table: "DPE.csv"
+  
