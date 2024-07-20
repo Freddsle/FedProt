@@ -307,9 +307,6 @@ class NAFilterState(AppState):
         # sort keep_proteins
         keep_proteins = utils.filter_features_na_rate(list_of_na_counts_tuples, self.load('max_na_rate'))
 
-        # TODO: REMOVE!
-        keep_proteins = ['P46859', 'P65807', 'Q46938', 'P45475', 'P75919', 'P37744;P61887','P32151', 'P77493', 'P12999', 'P52086']
-        
         self.log(f"Number of proteins after NA filtering: {len(keep_proteins)}")
         self.store(key='stored_features', value=keep_proteins)
         

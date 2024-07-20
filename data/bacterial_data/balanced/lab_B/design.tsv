@@ -1,6 +1,4 @@
 rowname	file	lab	Glu	Pyr
-Clinspect_E_coli_A_QC1_Slot1-6_1_8640	Clinspect_E_coli_A_QC1_Slot1-6_1_8640	lab_B	0	1
-Clinspect_E_coli_A_QC2_Slot1-15_1_8649	Clinspect_E_coli_A_QC2_Slot1-15_1_8649	lab_B	0	1
 Clinspect_E_coli_A_S5_Slot1-7_1_8641	Clinspect_E_coli_A_S5_Slot1-7_1_8641	lab_B	0	1
 Clinspect_E_coli_A_S7_Slot1-24_1_8673	Clinspect_E_coli_A_S7_Slot1-24_1_8673	lab_B	0	1
 Clinspect_E_coli_A_S14_Slot1-11_1_8645	Clinspect_E_coli_A_S14_Slot1-11_1_8645	lab_B	0	1
@@ -11,8 +9,6 @@ Clinspect_E_coli_A_S34_Slot1-18_1_8666	Clinspect_E_coli_A_S34_Slot1-18_1_8666	la
 Clinspect_E_coli_A_S39_Slot1-26_1_8675	Clinspect_E_coli_A_S39_Slot1-26_1_8675	lab_B	0	1
 Clinspect_E_coli_A_S42_Slot1-21_1_8670	Clinspect_E_coli_A_S42_Slot1-21_1_8670	lab_B	0	1
 Clinspect_E_coli_A_S47_Slot1-14_1_8648	Clinspect_E_coli_A_S47_Slot1-14_1_8648	lab_B	0	1
-Clinspect_E_coli_B_QC3_Slot1-23_1_8672	Clinspect_E_coli_B_QC3_Slot1-23_1_8672	lab_B	1	0
-Clinspect_E_coli_B_QC4_Slot1-10_1_8644	Clinspect_E_coli_B_QC4_Slot1-10_1_8644	lab_B	1	0
 Clinspect_E_coli_B_S53_Slot1-22_1_8671	Clinspect_E_coli_B_S53_Slot1-22_1_8671	lab_B	1	0
 Clinspect_E_coli_B_S58_Slot1-5_1_8639	Clinspect_E_coli_B_S58_Slot1-5_1_8639	lab_B	1	0
 Clinspect_E_coli_B_S62_Slot1-16_1_8664	Clinspect_E_coli_B_S62_Slot1-16_1_8664	lab_B	1	0
