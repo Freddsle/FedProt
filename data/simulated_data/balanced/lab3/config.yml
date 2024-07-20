@@ -1,0 +1,22 @@
+fedprot:
+  design: design.tsv
+  intensities: intensities.tsv
+  sep: '\t'
+  
+  use_smpc: true
+  
+  max_na_rate: 0.8
+  log_transformed: true
+
+  experiment_type: 'DIA'
+  remove_single_pep_protein: false
+  use_counts: false
+
+  only_shared_proteins: false
+
+    # label: "Condition"
+  target_classes: ["A", "B"]
+  covariates: []
+
+  result_table: "DPE.csv"
+  
