@@ -180,6 +180,7 @@ Code for the simulated data analysis and evaluation are in `evaluation/simulated
 
 ## Preprint:
 ### BibTeX
+'''
 @misc{burankova2024privacypreservingmulticenterdifferentialprotein,
       title={Privacy-Preserving Multi-Center Differential Protein Abundance Analysis with FedProt}, 
       author={Yuliya Burankova and Miriam Abele and Mohammad Bakhtiari and Christine von Törne and Teresa Barth and Lisa Schweizer and Pieter Giesbertz and Johannes R. Schmidt and Stefan Kalkhof and Janina Müller-Deile and Peter A van Veelen and Yassene Mohammed and Elke Hammer and Lis Arend and Klaudia Adamowicz and Tanja Laske and Anne Hartebrodt and Tobias Frisch and Chen Meng and Julian Matschinske and Julian Späth and Richard Röttger and Veit Schwämmle and Stefanie M. Hauck and Stefan Lichtenthaler and Axel Imhof and Matthias Mann and Christina Ludwig and Bernhard Kuster and Jan Baumbach and Olga Zolotareva},
@@ -189,3 +190,4 @@ Code for the simulated data analysis and evaluation are in `evaluation/simulated
       primaryClass={q-bio.QM},
       url={https://arxiv.org/abs/2407.15220}, 
 }
+'''
