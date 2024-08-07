@@ -166,6 +166,20 @@ Required libraries to run FedProt evaluation code:
 You can more quickly familiarize yourself with how FedProt works by using the  `evaluation_utils/fedprot_prototype/fedprot_script.py` script.
 Be aware that this version does not have SMPC and runs locally, only as an introduction and test.
 
+To run FeatureCloud test:
+- on bacterial dataset:
+    ```
+    # start controller
+    featurecloud controller start --port=8000 --data-dir=/ABS/PATH/TO/FedProt/data/bacterial_data/balanced
+
+    # build app - in case it was loaded from github
+    featurecloud app build ./FedProt fedprot
+
+    # run test
+    featurecloud test start --controller-host=http://localhost:8000 --app-image=fedprot --query-interval=1 --client-dirs=lab_A,lab_B,lab_C,lab_D,lab_E
+    ```
+- on human serum dataset:
+
 
 ## Structure:
 
