@@ -83,10 +83,11 @@ def aggregate_medians(mead_samples_tuples):
     return global_median_mean
 
 
-def aggregate_masks(list_of_masks, n, k, second_round=False, used_SMPC=False):
+def aggregate_masks(list_of_masks, n, k, second_round=False, used_SMPC=False, client_number=None):
     mask_glob = np.zeros((n, k))
 
     if not used_SMPC:
+        client_number = len(list_of_masks)
         # non-smpc case, need to aggregate
         logging.info('SMPC is not used, aggregating masks')
         for mask in list_of_masks:
@@ -94,11 +95,13 @@ def aggregate_masks(list_of_masks, n, k, second_round=False, used_SMPC=False):
     else:
         # smpc case, already aggregated
         mask_glob = list_of_masks[0]
+        mask_glob = np.array(mask_glob)
+        logging.info('SMPC is used, masks are already aggregated')
 
     if second_round:
         mask_glob = mask_glob > 0
     else:
-        mask_glob = mask_glob == len(list_of_masks)
+        mask_glob = mask_glob == client_number
     return mask_glob
 
 # aggragate XtX and XtX
@@ -193,6 +196,7 @@ def compute_SSE_and_cov_coef_global(cov_coef, SSE, Amean, n_measurements, n, mas
     # estimated covariance matrix of beta
     cov_coef = linalg.inv(cov_coef)
     # estimated residual variance
+    
     var = SSE / (n_measurements - (~mask_glob).sum(axis=1))
     # estimated residual standard deviations
     sigma = np.sqrt(var)
@@ -594,7 +598,6 @@ def spectral_count_ebayes(results, min_counts, stored_features,
         x = np.log2(min_counts)
         # y_pred = self.fit_predict_loess(x, log_var)
         logging.info("Fitting LOWESS curve...")
-        logging.info(f"min_count: {min_counts.shape}, log_var: {log_var.shape}")
         y_pred = fit_LOWESS_curve(x, log_var)
 
     elif fit_method == "nls":

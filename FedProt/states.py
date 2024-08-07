@@ -56,18 +56,24 @@ class InitialState(AppState):
         self.store(key='client', value=client)
 
         # get client's counts
-        counts = client.get_min_count()
-        self.log("Counts are computed...")
+        if self.load('use_counts'):
+            counts = client.get_min_count()
+            self.log("Counts are computed...")
 
         # send list of protein names (genes) to coordinator
-        if self.load('experiment_type') == "TMT":
-            self.log("[initial] Sending the counts, protein names list and plexes to the coordinator")
-            self.send_data_to_coordinator((counts.to_dict(), client.prot_names, client.tmt_names),
-                                           send_to_self=True, use_smpc=False)
+        if self.load('use_counts'):
+            dict_counts = counts.to_dict()
         else:
-            self.log("[initial] Sending the counts and protein names list to the coordinator")
-            self.send_data_to_coordinator((counts.to_dict(), client.prot_names),
-                                          send_to_self=True, use_smpc=False)       
+            dict_counts = None
+
+        if self.load('experiment_type') == "TMT":
+                self.log("[initial] Sending the counts, protein names list and plexes to the coordinator")
+                self.send_data_to_coordinator((dict_counts, client.prot_names, client.tmt_names),
+                                            send_to_self=True, use_smpc=False)
+        else:
+                self.log("[initial] Sending the counts and protein names list to the coordinator")
+                self.send_data_to_coordinator((dict_counts, client.prot_names),
+                                            send_to_self=True, use_smpc=False)
 
         # initialize app
         if self.is_coordinator:
@@ -150,8 +156,14 @@ class GetCountsProteinsPlexesState(AppState):
         prot_names = self.aggregate_protein_groups(list_of_proteins)
         self.store(key='protein_groups', value=prot_names)
 
-        global_min_counts = self.aggregate_counts(list_of_counts, prot_names)
-        self.store(key='min_counts', value=global_min_counts)
+        if self.load('use_counts'):
+            global_min_counts = self.aggregate_counts(list_of_counts, prot_names)
+            self.store(key='min_counts', value=global_min_counts)
+            counts_index = global_min_counts.index.tolist()
+            counts_values = global_min_counts.values.tolist()
+        else:
+            counts_index = None
+            counts_values = None
         
         variables = self.load_and_store_variables()
         self.store(key='variables', value=variables)
@@ -160,14 +172,14 @@ class GetCountsProteinsPlexesState(AppState):
         if experiment_type == "TMT" and plex_covariate:
             self.broadcast_data((client_list, 
                                  prot_names, 
-                                 global_min_counts.index.tolist(), global_min_counts.values.tolist(), 
+                                 counts_index, counts_values, 
                                  variables, 
                                  plex_covariates_list), 
                                 send_to_self=True, memo="ProteinsCounts")
         else:
             self.broadcast_data((client_list, 
                                  prot_names, 
-                                 global_min_counts.index.tolist(), global_min_counts.values.tolist(), 
+                                 counts_index, counts_values, 
                                  variables), 
                                 send_to_self=True, memo="ProteinsCounts")
         return 'validation'
@@ -206,7 +218,9 @@ class GetCountsProteinsPlexesState(AppState):
         min_counts = [pd.DataFrame.from_dict(local_counts, orient='index') for local_counts in list_of_counts]
         global_min_counts = pd.concat(min_counts, axis=1).min(axis=1)
         global_min_counts = global_min_counts.loc[prot_names]
-        global_min_counts += 1
+        # if min in global_min_counts is 0, add 1 to all counts
+        if (global_min_counts == 0).any():
+            global_min_counts = global_min_counts + 1
         self.log(f"Size of global min counts: {global_min_counts.shape}")
         return global_min_counts
     
@@ -235,10 +249,13 @@ class ValidationState(AppState):
         self.log("Start validation...")
         # get list of common proteins from coordinator
         if self.load('experiment_type') == "TMT" and self.load('plex_covariate'):
-            client_list, stored_features, global_min_counts_in, global_min_counts_val, variables, plex_covariates = self.await_data(n=1, is_json=False, 
-                                                                                       memo="ProteinsCounts")
+            client_list, stored_features, global_min_counts_in, \
+                global_min_counts_val, variables, plex_covariates = \
+                    self.await_data(n=1, is_json=False,
+                                    memo="ProteinsCounts")
         else:
-            client_list, stored_features, global_min_counts_in, global_min_counts_val, variables = self.await_data(n=1, is_json=False, 
+            client_list, stored_features, global_min_counts_in, \
+                global_min_counts_val, variables = self.await_data(n=1, is_json=False, 
                                                                       memo="ProteinsCounts")
         # load client data
         client = self.load('client')
@@ -303,7 +320,9 @@ class NAFilterState(AppState):
         self.log("Start NA filtering...")
         self.log(f"Number of proteins before NA filtering: {len(self.load('protein_groups'))}")
         
-        list_of_na_counts_tuples = self.gather_data(is_json=False, use_smpc=self.load('use_smpc'))
+        list_of_na_counts_tuples = self.gather_data(is_json=False, 
+                                                    use_smpc=self.load('use_smpc'))
+                                             
         # sort keep_proteins
         keep_proteins = utils.filter_features_na_rate(list_of_na_counts_tuples, self.load('max_na_rate'))
 
@@ -440,8 +459,6 @@ class MaskPreparationState(AppState):
 
         self.log("Start mask preparation...")
         mask = client.get_mask()
-        self.log(mask)
-
         self.log(f"Mask is prepared. Size: {mask.shape}")
 
         self.send_data_to_coordinator(mask, send_to_self=True, use_smpc=self.load('use_smpc'))
@@ -455,24 +472,27 @@ class MaskPreparationState(AppState):
 
 
 @app_state(name='mask_aggregation')
-class MaskUpdateState(AppState):
+class MaskAggregationState(AppState):
     def register(self):
         self.register_transition('mask_update', role=Role.COORDINATOR)
 
     def run(self):
         self.log("Start aggregating mask...")
         mask = self.gather_data(use_smpc=self.load('use_smpc'), is_json=False)
-        self.log(mask)
-        # from list to np.ndarray
-        mask = np.array(mask)
+
         k = len(self.load('variables'))
-        n = len(self.load('stored_features'))
-        global_mask = utils.aggregate_masks(mask, n, k, used_SMPC=self.load('use_smpc'))
-        self.log(global_mask)
+        n = len(self.load('stored_features'))        
+        client_number = len(self.load('client_list'))
+
+        global_mask = utils.aggregate_masks(mask, n, k, used_SMPC=self.load('use_smpc'),
+                                          client_number=client_number)
+        
         self.log(f"Mask is aggregated, size: {global_mask.shape}")
+        
         self.broadcast_data(global_mask, send_to_self=True, memo="Mask")
         self.log("Transition to mask update...")
         return 'mask_update'
+
 
 @app_state(name='mask_update')
 class MaskUpdateState(AppState):
@@ -484,10 +504,11 @@ class MaskUpdateState(AppState):
         self.log("Start updating mask...")
         mask = self.await_data(n=1, is_json=False, memo="Mask")
         mask = np.array(mask)
-        self.log("Mask is received...")
+        self.log(f"Mask is received..., size: {mask.shape}, type: {type(mask)}")
+
         client = self.load('client')
         updated_masks = client.updated_mask(mask)
-        self.log(updated_masks)
+        
         self.log(f"Mask is updated, size: {updated_masks.shape}")
         self.send_data_to_coordinator(updated_masks, send_to_self=True, use_smpc=self.load('use_smpc'))
 
@@ -507,16 +528,13 @@ class SaveMaskState(AppState):
     def run(self):
         self.log("Start saving mask...")
         masks = self.gather_data(use_smpc=self.load('use_smpc'), is_json=False)
-        masks = np.array(masks)
+        
         k = len(self.load('variables'))
         n = len(self.load('stored_features'))
         mask_glob = utils.aggregate_masks(masks, n, k, second_round=True, used_SMPC=self.load('use_smpc'))
-        self.store(key='mask', value=mask_glob)
-        self.log("Mask is saved...")
-        
-        # TODO: REMOVE!
-        self.log(mask_glob)
+        self.log("Final global mask is saved...")
 
+        self.log("Broadcasting mask...")
         self.broadcast_data(mask_glob, send_to_self=True, memo="MaskGlobal")
         self.log("Transition to computation state...")
         return 'compute_XtY_XTX'
@@ -536,13 +554,9 @@ class ComputeXtState(AppState):
     def run(self):
         client = self.load('client')
 
-        # TODO: CORRECT!
-        mask_glob = self.await_data(n=1, memo="MaskGlobal")
-        # transform into np array with True/False values
-        mask_glob = np.array(mask_glob).astype(bool)
-        self.store(key='MaskGlobal', value=mask_glob)
-        self.log(mask_glob)
-
+        global_mask = self.await_data(n=1, memo="MaskGlobal")
+        global_mask = np.array(global_mask)
+        self.store(key='MaskGlobal', value=global_mask)
 
         self.log("Start computation of XtY and XTX...")
         XtX, XtY = client.compute_XtX_XtY()
@@ -578,7 +592,9 @@ class ComputeBetaState(AppState):
         XtX_glob, XtY_glob = utils.aggregate_XtX_XtY(list_of_xt_lists, n, k, self.load('use_smpc'))
         self.log("Computing beta and beta stdev...")        
     
-        beta, stdev_unscaled = utils.compute_beta_and_stdev(XtX_glob, XtY_glob, n, k, self.load('MaskGlobal'))
+        beta, stdev_unscaled = utils.compute_beta_and_stdev(np.array(XtX_glob), np.array(XtY_glob), 
+                                                            n, k, 
+                                                            self.load('MaskGlobal'))
         self.store(key='beta', value=beta)
         self.store(key='stdev_unscaled', value=stdev_unscaled)
 
@@ -593,11 +609,12 @@ class ComputeBetaState(AppState):
 class ComputeSSEState(AppState):
     def register(self):
         self.register_transition('aggregate_SSE', role=Role.COORDINATOR)
-        self.register_transition('get_counts', role=Role.PARTICIPANT)
+        self.register_transition('write_results', role=Role.PARTICIPANT)
 
     def run(self):
         self.log("Start computation of SSE and cov_coef...")
         beta = self.await_data(n=1, memo="BetaStdev")
+        beta = np.array(beta)
 
         client = self.load('client')
         SSE, cov_coef = client.compute_SSE_and_cov_coef(beta, self.load('MaskGlobal'))
@@ -614,10 +631,9 @@ class ComputeSSEState(AppState):
         if self.is_coordinator:
             self.log("Transition to aggregation of SSE...")
             return 'aggregate_SSE'
-        else:
-            self.log("Transition to getting counts...")
-            return 'get_counts'
-    
+        self.log("Transition to writing results...")
+        return 'write_results'
+
 
 @app_state(name='aggregate_SSE')
 class AggregateSSEState(AppState):
@@ -631,12 +647,11 @@ class AggregateSSEState(AppState):
         k = len(self.load('variables'))
         n = len(self.load('stored_features'))
 
-        SSE, cov_coef, Amean, n_measurements = utils.aggregate_SSE_and_cov_coef(
+        SSE, cov_coef, n_measurements, Amean = utils.aggregate_SSE_and_cov_coef(
             list_of_sse_cov_coef, n, k, self.load('use_smpc'), len(self.load('client_list'))
         )
         
         self.log("Aggregation of SSE is done, start computing global parameters...")
-
         sigma, cov_coef, df_residual, Amean, var = utils.compute_SSE_and_cov_coef_global(
             cov_coef, SSE, Amean, n_measurements, n, self.load('MaskGlobal')
         )
@@ -686,10 +701,8 @@ class FitContrastsState(AppState):
     def run(self):
         self.log("Start fitting contrasts...")
         contrast_matrix = self.load('contrasts').values
-        ncoef = self.load('cov_coef').shape[1]        
-        self.store(key='beta', value=beta)
-        self.store(key='stdev_unscaled', value=stdev_unscaled)
-
+        ncoef = self.load('cov_coef').shape[1]
+        
         beta, stdev_unscaled, cov_coef = utils.fit_contrasts(
             self.load('beta'), 
             contrast_matrix,
@@ -713,7 +726,7 @@ class FitContrastsState(AppState):
 class eBayesState(AppState):
     def register(self):
         self.register_transition('spectral_count_ebayes', role=Role.COORDINATOR)
-        self.register_transition('write_results', role=Role.BOTH)
+        self.register_transition('write_results', role=Role.COORDINATOR)
 
     def run(self):
         self.log("Start eBayes stage...")
@@ -750,8 +763,11 @@ class eBayesState(AppState):
             self.log("Transition to count adjustment...")
             return 'spectral_count_ebayes'
         else:
+            self.log("Broadcasting results...")
+            self.broadcast_data(results.to_dict(orient = 'index'), send_to_self=True, memo="Results")
             self.log("Transition to writing results...")
             return 'write_results'
+
 
 ############################################################################################################
 # Spectral count eBayes state
@@ -763,10 +779,16 @@ class SpectralCounteBayesState(AppState):
 
     def run(self):
         self.log("Start spectral count eBayes stage...")
+
+        global_min_counts = self.load('min_counts') + 1
+        global_min_counts = global_min_counts.loc[self.load('stored_features')]
+        self.log(f"Size of global min counts: {global_min_counts.shape}")
+
         results = self.load('results')
+
         results = utils.spectral_count_ebayes(
             results, 
-            self.load('min_counts'), 
+            global_min_counts, 
             self.load('stored_features'),
             self.load('beta'), 
             self.load('stdev_unscaled'),

@@ -349,7 +349,12 @@ class Client:
         """
         logging.info(f"Client {self.cohort_name}:\tProtein groups: {len(self.intensities.index)}")
         logging.info(f"Client {self.cohort_name}:\tProtein groups supported by a single peptide will be excluded.")
+
+        # transform counts df to pandas.core.series.Series
+        self.counts = self.counts.squeeze()
         proteins_passing_filter = self.counts[self.counts > 1].index
+        logging.info(f"Client {self.cohort_name}:\tNumber of protein groups excluded: {len(self.intensities.index) - len(proteins_passing_filter)}")
+
         self.intensities = self.intensities.loc[proteins_passing_filter]
         self.counts = self.counts.loc[proteins_passing_filter]
         logging.info(f"Client {self.cohort_name}:\tProtein groups after filter: {len(self.intensities.index)}")
