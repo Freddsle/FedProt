@@ -78,6 +78,7 @@ else:
     plex_column = None
 
 remove_single_pep_protein = config["fedprot"]["remove_single_pep_protein"]
+remove_single_value_design = config["fedprot"]['remove_single_value_design']
 target_classes = config["fedprot"]["target_classes"]
 covariates = config["fedprot"]["covariates"]
 
@@ -118,7 +119,8 @@ for cohort_name in cohorts:
         ref_type = ref_type,
         plex_column = plex_column,
         target_classes = target_classes,
-        TEST_MODE = TEST_MODE
+        TEST_MODE = TEST_MODE,
+        remove_single_value_design = remove_single_value_design
     )
     store_clients[client.cohort_name] = client
 

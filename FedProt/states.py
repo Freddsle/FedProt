@@ -48,7 +48,8 @@ class InitialState(AppState):
             log_transformed = self.load('log_transformed'),
             ref_type = self.load('ref_type'),
             plex_column = self.load('plex_column'),
-            target_classes = self.load('target_classes')
+            target_classes = self.load('target_classes'),
+            remove_single_value_design = self.load('remove_single_value_design')
         ) 
         self.log(f"Data read! {client.intensities.shape[1]} samples, {client.intensities.shape[0]} proteins")
 
@@ -115,6 +116,7 @@ class InitialState(AppState):
             self.store(key='use_irs', value=False)
 
         self.store(key='remove_single_pep_protein', value=config['remove_single_pep_protein'])
+        self.store(key='remove_single_value_design', value=config['remove_single_value_design'])
         self.store(key='target_classes', value=config['target_classes'])
         self.store(key='covariates', value=config['covariates'])
 
@@ -457,7 +459,7 @@ class MaskPreparationState(AppState):
         client.prepare_for_limma(self.load('stored_features'))        
         self.log(f'Design colnames: {client.design.columns.values}')
 
-        self.log("Start mask preparation...")
+        self.log("Start mask preparation...")        
         mask = client.get_mask()
         self.log(f"Mask is prepared. Size: {mask.shape}")
 

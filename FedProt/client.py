@@ -24,6 +24,7 @@ class Client:
         plex_column=None,
         target_classes=None,
         TEST_MODE=False,
+        remove_single_value_design=True,
     ):
         self.experiment_type = experiment_type
         self.cohort_name = cohort_name
@@ -44,7 +45,8 @@ class Client:
             else:
                 self.plex_column = plex_column       
                 
-        self.log_transformed = log_transformed     
+        self.log_transformed = log_transformed
+        self.remove_single_value_design = remove_single_value_design
 
         # df for filters
         self.counts = None
@@ -397,11 +399,47 @@ class Client:
 
         return na_count_in_variable, samples_per_class
 
+    def check_na_columns(self):
+        """
+        proteins with all NA but one value for a samples belonging to a given design column transformed to NA
+        """
+        # Initialize counter for the total number of affected rows
+        total_affected_rows = set()
+
+        for column in self.design.columns:
+            samples_list = self.design.loc[self.design[column] == 1, :].index.values
+            if len(samples_list) == 0:
+                continue
+            column_intensities = self.intensities.loc[:, samples_list]
+            # logging.debug(f"Client {self.cohort_name}:\tChecking column {column}, intensities shape: {column_intensities.shape}")        
+            # Count the number of NAs in each row for the subset of samples
+            na_count = column_intensities.isna().sum(axis=1)    
+            # Identify rows that should be set to NA
+            affected_rows = (na_count == len(samples_list) - 1)            
+            # Update the intensity matrix
+            self.intensities.loc[affected_rows, samples_list] = np.nan            
+            # Update the total affected rows set with the indices of affected rows
+            total_affected_rows.update(self.intensities.index[affected_rows])
+
+        # Calculate the total number of unique affected rows
+        total_affected_rows = len(total_affected_rows)
+        if total_affected_rows > 0:
+            # Log the total number of affected rows
+            logging.info(
+                f"Client {self.cohort_name}:\tTotal protein groups with all NA but one value in design columns: {total_affected_rows}."
+            )
+        else:
+            logging.info(f"Client {self.cohort_name}:\tNo protein groups with all NA but one value in design columns.")
+
     def apply_filters(self, min_f=0.5, remove_single_peptide_prots=False):
         sample_type = SAMPLE_TYPE
 
         if remove_single_peptide_prots:
             self.remove_single_pept_prots()
+
+        # proteins with all NA but one value for a samples belonging to a given design column transformed to NA
+        if self.remove_single_value_design:
+            self.check_na_columns()
 
         if self.experiment_type == EXPERIMENT_TYPE and self.ref_type != "in_silico_reference":
             # marks proteins not detected in refs
