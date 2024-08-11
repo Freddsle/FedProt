@@ -23,6 +23,7 @@ Available normalization methods:
   - [Configuration File Description](#configuration-file-description)
 - [Running the app](#running-the-app)
   - [Prerequisite](#prerequisite)
+  - [Test data](#test-data)
   - [Run](#run)
   - [Output](#output)
 - [FedProt states](#fedprot-states)
