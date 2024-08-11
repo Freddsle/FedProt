@@ -24,6 +24,7 @@ Available normalization methods:
 - [Running the app](#running-the-app)
   - [Prerequisite](#prerequisite)
   - [Run](#run)
+  - [Output](#output)
 - [FedProt states](#fedprot-states)
 - [Evaluation](#evaluation)
   - [Run the evaluation:](#run-the-evaluation)
@@ -178,6 +179,10 @@ featurecloud test start --controller-host=http://localhost:8000 --app-image=fedp
 The results could be found in the featurecloud tests folder. 
 
 You can use provided example data or you own data.
+
+## Output
+
+The results file contains logFC, p-values and adj.p-values or count-adjusted p-values nd adj.p-values. The result file is in the same format as DEqMS or limma result tables.
 
 # FedProt states
 

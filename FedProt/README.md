@@ -4,7 +4,7 @@ Privacy-Preserving Federated Multi-center Differential Protein Abundance Analysi
 
 https://arxiv.org/abs/2407.15220
 
-![logo](logo2.jpg)
+![logo](../logo2.jpg)
 
 It is a federated version of state of the art [DEqMS](https://pubmed.ncbi.nlm.nih.gov/32205417/) workflow. 
 
@@ -183,7 +183,7 @@ You can use provided example data or you own data.
 
 The FedProt app states:
 
-![states](states.png)
+![states](../states.png)
 
 Represent the client-side workflow, red represent the coordinator's workflow, and violet represent transitions that involve both the client and coordinator. 
 
