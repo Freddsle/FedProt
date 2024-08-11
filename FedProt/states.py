@@ -21,8 +21,10 @@ OUTPUT_DIR = "/mnt/output"
 @app_state(name='initial', role=Role.BOTH)
 class InitialState(AppState):
     def register(self):
-        self.register_transition('get_counts', Role.COORDINATOR)
-        self.register_transition('validation', Role.PARTICIPANT)
+        self.register_transition('get_counts', Role.COORDINATOR,
+                                label='Get counts, \nPGs and plexes')
+        self.register_transition('validation', Role.PARTICIPANT,
+                                label='Validation')
 
     def run(self):
         # read config
@@ -143,7 +145,8 @@ class GetCountsProteinsPlexesState(AppState):
     """
     
     def register(self):
-        self.register_transition('validation', role=Role.COORDINATOR)
+        self.register_transition('validation', role=Role.COORDINATOR,
+                                label='Validation')
     
     def run(self):
         self.log("[get_counts] Start collecting counts and protein lists...")
@@ -252,7 +255,8 @@ class GetCountsProteinsPlexesState(AppState):
 @app_state(name='validation')
 class ValidationState(AppState):
     def register(self):
-        self.register_transition('prot_na_counting', role=Role.BOTH)
+        self.register_transition('prot_na_counting', role=Role.BOTH,
+                                label='Protein NA counting \nfor filtering')
 
     def run(self):
         self.log("[validation] Start validation and filtering...")
@@ -297,8 +301,10 @@ class ValidationState(AppState):
 @app_state(name='prot_na_counting')
 class NACountState(AppState):
     def register(self):
-        self.register_transition('prot_na_filtering', role=Role.COORDINATOR)
-        self.register_transition('do_normalization', role=Role.PARTICIPANT)
+        self.register_transition('prot_na_filtering', role=Role.COORDINATOR,
+                                 label='PG NA filtering')
+        self.register_transition('do_normalization', role=Role.PARTICIPANT,
+                                    label='Normalization')
     
     def run(self):
         self.log("[prot_na_counting] Start counting NA values...")
@@ -324,7 +330,8 @@ class NACountState(AppState):
 @app_state(name='prot_na_filtering')
 class NAFilterState(AppState):
     def register(self):
-        self.register_transition('do_normalization', role=Role.COORDINATOR)
+        self.register_transition('do_normalization', role=Role.COORDINATOR,
+                                label='Normalization')
 
     def run(self):
         self.log("[prot_na_filtering] Start filtering based on NA values...")
@@ -350,9 +357,12 @@ class NAFilterState(AppState):
 @app_state(name='do_normalization')
 class NormalizationState(AppState):
     def register(self):
-        self.register_transition('median_calculation', role=Role.BOTH)
-        self.register_transition('irs_normalization', role=Role.BOTH)
-        self.register_transition('mask_preparation', role=Role.BOTH)
+        self.register_transition('median_calculation', role=Role.BOTH,
+                                label='Median normalization')
+        self.register_transition('irs_normalization', role=Role.BOTH,
+                                label='IRS normalization')
+        self.register_transition('mask_preparation', role=Role.BOTH,
+                                label='No normalization')
 
     def run(self):
         self.log("[do_normalization] Start normalization...")
@@ -380,8 +390,10 @@ class NormalizationState(AppState):
 @app_state(name='median_calculation')
 class MedianCalculationState(AppState):
     def register(self):
-        self.register_transition('global_median_calculation', role=Role.COORDINATOR)
-        self.register_transition('median_centering', role=Role.PARTICIPANT)
+        self.register_transition('global_median_calculation', role=Role.COORDINATOR,
+                                label='Global median \ncalculation')
+        self.register_transition('median_centering', role=Role.PARTICIPANT,
+                                label='Median centering')
 
     def run(self):
         self.log("[median_calculation] Start median calculation...")
@@ -404,7 +416,8 @@ class MedianCalculationState(AppState):
 @app_state(name='global_median_calculation')
 class GlobalMedianNormalizationState(AppState):
     def register(self):
-        self.register_transition('median_centering', role=Role.COORDINATOR)
+        self.register_transition('median_centering', role=Role.COORDINATOR,
+                                label='Median centering')
 
     def run(self):
         self.log("[global_median_calculation] Start global median calculation...")
@@ -420,8 +433,10 @@ class GlobalMedianNormalizationState(AppState):
 @app_state(name='median_centering')
 class MedianCenteringState(AppState):
     def register(self):
-        self.register_transition('mask_preparation', role=Role.BOTH)
-        self.register_transition('irs_normalization', role=Role.BOTH)
+        self.register_transition('mask_preparation', role=Role.BOTH,
+                                label='No IRS normalization')
+        self.register_transition('irs_normalization', role=Role.BOTH,
+                                label='IRS normalization')
 
     def run(self):
         self.log("[median_centering] Start median centering...")
@@ -441,7 +456,8 @@ class MedianCenteringState(AppState):
 @app_state(name='irs_normalization')
 class IRSNormalizationState(AppState):
     def register(self):
-        self.register_transition('mask_preparation', role=Role.BOTH)
+        self.register_transition('mask_preparation', role=Role.BOTH,
+                                label='Mask preparation')
 
     def run(self):
         self.log("[irs_normalization] Start IRS normalization...")
@@ -459,8 +475,10 @@ class IRSNormalizationState(AppState):
 @app_state(name='mask_preparation')
 class MaskPreparationState(AppState):
     def register(self):
-        self.register_transition('mask_update', role=Role.PARTICIPANT)
-        self.register_transition('mask_aggregation', role=Role.COORDINATOR)
+        self.register_transition('mask_update', role=Role.PARTICIPANT,
+                                label='Mask update')
+        self.register_transition('mask_aggregation', role=Role.COORDINATOR,
+                                label='Mask aggregation')
 
     def run(self):
         client = self.load('client')
@@ -490,7 +508,8 @@ class MaskPreparationState(AppState):
 @app_state(name='mask_aggregation')
 class MaskAggregationState(AppState):
     def register(self):
-        self.register_transition('mask_update', role=Role.COORDINATOR)
+        self.register_transition('mask_update', role=Role.COORDINATOR,
+                                label='Mask update')
 
     def run(self):
         self.log("[mask_aggregation] Start mask aggregation...")
@@ -515,8 +534,10 @@ class MaskAggregationState(AppState):
 @app_state(name='mask_update')
 class MaskUpdateState(AppState):
     def register(self):
-        self.register_transition('compute_XtY_XTX', role=Role.PARTICIPANT)
-        self.register_transition('save_mask', role=Role.COORDINATOR)
+        self.register_transition('compute_XtY_XTX', role=Role.PARTICIPANT,
+                                label='XtY and XTX computation')
+        self.register_transition('save_mask', role=Role.COORDINATOR,
+                                label='Mask saving')
 
     def run(self):
         self.log("[mask_update] Start mask update...")
@@ -541,7 +562,8 @@ class MaskUpdateState(AppState):
 @app_state(name='save_mask')
 class SaveMaskState(AppState):
     def register(self):
-        self.register_transition('compute_XtY_XTX', role=Role.COORDINATOR)
+        self.register_transition('compute_XtY_XTX', role=Role.COORDINATOR,
+                                label='XtY and XTX computation')
 
     def run(self):
         self.log("[save_mask] Start saving mask...")
@@ -599,7 +621,7 @@ class ComputeXtState(AppState):
 class ComputeBetaState(AppState):
     def register(self):
         self.register_transition('compute_SSE', role=Role.COORDINATOR,
-                                 label='Compute SSE and cov_coef')
+                                 label='Compute SSE and cov.coef')
         
     def run(self):
         self.log("[compute_beta] Start computation of beta and beta stdev...")
@@ -631,8 +653,10 @@ class ComputeBetaState(AppState):
 @app_state(name='compute_SSE')
 class ComputeSSEState(AppState):
     def register(self):
-        self.register_transition('aggregate_SSE', role=Role.COORDINATOR)
-        self.register_transition('write_results', role=Role.PARTICIPANT)
+        self.register_transition('aggregate_SSE', role=Role.COORDINATOR,
+                                label='Aggregate SSE and cov_coef')
+        self.register_transition('write_results', role=Role.PARTICIPANT,
+                                label='Write results')
 
     def run(self):
         self.log("[compute_SSE] Start computation of SSE and cov_coef...")
@@ -664,7 +688,8 @@ class ComputeSSEState(AppState):
 @app_state(name='aggregate_SSE')
 class AggregateSSEState(AppState):
     def register(self):
-        self.register_transition('make_contrasts', role=Role.COORDINATOR)
+        self.register_transition('make_contrasts', role=Role.COORDINATOR,
+                                label='Make contrasts')
 
     def run(self):
         self.log("[aggregate_SSE] Start aggregation of SSE and cov_coef...")
@@ -705,7 +730,8 @@ class MakeContrastsState(AppState):
     A-B and (A and B) - (C and D).
     """
     def register(self):
-        self.register_transition('fit_contasts', role=Role.COORDINATOR)
+        self.register_transition('fit_contasts', role=Role.COORDINATOR,
+                                label='Fit contrasts')
 
     def run(self):
         self.log("[make_contrasts] Start making contrasts...")
@@ -721,7 +747,8 @@ class MakeContrastsState(AppState):
 @app_state(name='fit_contasts')
 class FitContrastsState(AppState):
     def register(self):
-        self.register_transition('ebayes', role=Role.COORDINATOR)
+        self.register_transition('ebayes', role=Role.COORDINATOR,
+                                label='eBayes stage')
 
     def run(self):
         self.log("[fit_contasts] Start fitting contrasts...")
@@ -750,8 +777,10 @@ class FitContrastsState(AppState):
 @app_state(name='ebayes')
 class eBayesState(AppState):
     def register(self):
-        self.register_transition('spectral_count_ebayes', role=Role.COORDINATOR)
-        self.register_transition('write_results', role=Role.COORDINATOR)
+        self.register_transition('spectral_count_ebayes', role=Role.COORDINATOR,
+                                label='Spectral count eBayes stage')
+        self.register_transition('write_results', role=Role.COORDINATOR,
+                                label='No counts, write results')
 
     def run(self):
         self.log("[ebayes] Start eBayes stage...")
@@ -798,7 +827,8 @@ class eBayesState(AppState):
 @app_state(name='spectral_count_ebayes')
 class SpectralCounteBayesState(AppState):
     def register(self):
-        self.register_transition('write_results', role=Role.COORDINATOR)
+        self.register_transition('write_results', role=Role.COORDINATOR,
+                                label='Write results')
 
     def run(self):
         self.log("[spectral_count_ebayes] Start spectral count eBayes stage...")
