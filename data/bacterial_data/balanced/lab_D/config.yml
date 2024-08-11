@@ -4,7 +4,11 @@ fedprot:
   intensities: protein_groups_matrix.tsv
   sep: '\t'
   
-  use_smpc: true
+  name_cohort: "lab_D"
+  TEST_MODE: true
+  
+  use_smpc: false
+  # use_smpc: true
   
   max_na_rate: 0.8
   log_transformed: false
@@ -12,6 +16,7 @@ fedprot:
   experiment_type: 'DIA'
   remove_single_pep_protein: false
   use_counts: true
+  remove_single_value_design: false
   
   only_shared_proteins: false
 

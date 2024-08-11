@@ -49,7 +49,8 @@ class InitialState(AppState):
             ref_type = self.load('ref_type'),
             plex_column = self.load('plex_column'),
             target_classes = self.load('target_classes'),
-            remove_single_value_design = self.load('remove_single_value_design')
+            remove_single_value_design = self.load('remove_single_value_design'),
+            TEST_MODE=self.load('TEST_MODE')
         ) 
         self.log(f"Data read! {client.intensities.shape[1]} samples, {client.intensities.shape[0]} proteins")
 
@@ -68,13 +69,14 @@ class InitialState(AppState):
             dict_counts = None
 
         if self.load('experiment_type') == "TMT":
-                self.log("[initial] Sending the counts, protein names list and plexes to the coordinator")
-                self.send_data_to_coordinator((dict_counts, client.prot_names, client.tmt_names),
-                                            send_to_self=True, use_smpc=False)
+            self.log("[initial] Sending the counts, protein names list and plexes to the coordinator")
+            self.send_data_to_coordinator((dict_counts, client.prot_names, client.tmt_names),
+                                          send_to_self=True, use_smpc=False)
         else:
-                self.log("[initial] Sending the counts and protein names list to the coordinator")
-                self.send_data_to_coordinator((dict_counts, client.prot_names),
-                                            send_to_self=True, use_smpc=False)
+            self.log("[initial] Sending the counts and protein names list to the coordinator")
+            self.send_data_to_coordinator((dict_counts, client.prot_names),
+                                          send_to_self=True, use_smpc=False)
+
 
         # initialize app
         if self.is_coordinator:
@@ -101,6 +103,12 @@ class InitialState(AppState):
         self.store(key='log_transformed', value=config['log_transformed'])
 
         self.store(key='experiment_type', value=config['experiment_type'])
+        
+        if "TEST_MODE" in config:
+            TEST_MODE = config["TEST_MODE"]
+        else:
+            TEST_MODE = False
+        self.store(key='TEST_MODE', value=TEST_MODE)
 
         if config['experiment_type'] == "TMT":
             self.store(key='ref_type', value=config['ref_type'])
@@ -146,6 +154,7 @@ class GetCountsProteinsPlexesState(AppState):
             list_of_counts, list_of_proteins, list_of_plexes = self.collect_tmt_data()
         else:
             list_of_counts, list_of_proteins = self.collect_non_tmt_data()
+        self.log("[get_counts] Counts and protein lists are collected...")
         
         self.log("[get_counts] Gathering done!")
         client_list = self.update_client_list()
@@ -179,7 +188,7 @@ class GetCountsProteinsPlexesState(AppState):
                                  plex_covariates_list), 
                                 send_to_self=True, memo="ProteinsCounts")
         else:
-            self.broadcast_data((client_list, 
+           self.broadcast_data((client_list, 
                                  prot_names, 
                                  counts_index, counts_values, 
                                  variables), 
@@ -203,7 +212,7 @@ class GetCountsProteinsPlexesState(AppState):
         # move the coodinator cohort name to the 0 place in the list of self.clients
         cohort_name = self.id
         client_list = [cohort_name] + [client for client in self.clients if client != cohort_name]
-        self.log(f'List of clients: {client_list}')
+        self.log(f'Number of clients: {len(client_list)}')
         return client_list
     
     def aggregate_plex_covariates(self, list_of_plexes):
@@ -212,7 +221,6 @@ class GetCountsProteinsPlexesState(AppState):
         for plexes in list_of_plexes:
             plex_covariates_list.extend(plexes)
         plex_covariates_list = sorted(list(set(plex_covariates_list)))
-        self.log(f"Size of plex covariates list: {len(plex_covariates_list)}")
         return plex_covariates_list
     
     def aggregate_counts(self, list_of_counts, prot_names):
@@ -223,7 +231,6 @@ class GetCountsProteinsPlexesState(AppState):
         # if min in global_min_counts is 0, add 1 to all counts
         if (global_min_counts == 0).any():
             global_min_counts = global_min_counts + 1
-        self.log(f"Size of global min counts: {global_min_counts.shape}")
         return global_min_counts
     
     def aggregate_protein_groups(self, list_of_proteins):
@@ -248,7 +255,7 @@ class ValidationState(AppState):
         self.register_transition('prot_na_counting', role=Role.BOTH)
 
     def run(self):
-        self.log("Start validation...")
+        self.log("[validation] Start validation and filtering...")
         # get list of common proteins from coordinator
         if self.load('experiment_type') == "TMT" and self.load('plex_covariate'):
             client_list, stored_features, global_min_counts_in, \
@@ -265,6 +272,7 @@ class ValidationState(AppState):
         # update counts if use_counts is True
         if self.load('use_counts'):
             global_min_counts = pd.DataFrame({"count" : global_min_counts_val}, index = global_min_counts_in)
+            # global_min_counts = pd.Series(data=global_min_counts_val, index=global_min_counts_in)
             client.counts = global_min_counts.copy()
             self.log("Counts are updated...")
 
@@ -293,7 +301,7 @@ class NACountState(AppState):
         self.register_transition('do_normalization', role=Role.PARTICIPANT)
     
     def run(self):
-        self.log("Start NA counting...")
+        self.log("[prot_na_counting] Start counting NA values...")
         client = self.load('client')
         na_count_in_variable, samples_per_class = client.apply_filters(
             min_f=self.load('max_na_rate'), 
@@ -319,14 +327,15 @@ class NAFilterState(AppState):
         self.register_transition('do_normalization', role=Role.COORDINATOR)
 
     def run(self):
-        self.log("Start NA filtering...")
+        self.log("[prot_na_filtering] Start filtering based on NA values...")
         self.log(f"Number of proteins before NA filtering: {len(self.load('protein_groups'))}")
         
         list_of_na_counts_tuples = self.gather_data(is_json=False, 
                                                     use_smpc=self.load('use_smpc'))
                                              
         # sort keep_proteins
-        keep_proteins = utils.filter_features_na_rate(list_of_na_counts_tuples, self.load('max_na_rate'))
+        keep_proteins = utils.filter_features_na_rate(list_of_na_counts_tuples, 
+                                                      self.load('max_na_rate'))
 
         self.log(f"Number of proteins after NA filtering: {len(keep_proteins)}")
         self.store(key='stored_features', value=keep_proteins)
@@ -346,6 +355,8 @@ class NormalizationState(AppState):
         self.register_transition('mask_preparation', role=Role.BOTH)
 
     def run(self):
+        self.log("[do_normalization] Start normalization...")
+
         keep_proteins = self.await_data(n=1, is_json=False, memo="KeepProteins")
         client = self.load('client')
         client.update_prot_names(keep_proteins)
@@ -373,7 +384,7 @@ class MedianCalculationState(AppState):
         self.register_transition('median_centering', role=Role.PARTICIPANT)
 
     def run(self):
-        self.log("Start median normalization...")
+        self.log("[median_calculation] Start median calculation...")
         client = self.load('client')
         self.log("Computing local medians...")
         avg_medians = client.compute_medians()
@@ -396,7 +407,7 @@ class GlobalMedianNormalizationState(AppState):
         self.register_transition('median_centering', role=Role.COORDINATOR)
 
     def run(self):
-        self.log("Start global median normalization...")
+        self.log("[global_median_calculation] Start global median calculation...")
         mead_samples_tuples = self.gather_data(use_smpc=False)
         global_median = utils.aggregate_medians(mead_samples_tuples)
         self.log("Global median is computed, sending to participants...")
@@ -413,7 +424,7 @@ class MedianCenteringState(AppState):
         self.register_transition('irs_normalization', role=Role.BOTH)
 
     def run(self):
-        self.log("Start median centering...")
+        self.log("[median_centering] Start median centering...")
         global_median_mean = self.await_data(n=1, memo="GlobalMedian")
         client = self.load('client')
         client.mean_median_centering(global_median_mean)
@@ -433,7 +444,7 @@ class IRSNormalizationState(AppState):
         self.register_transition('mask_preparation', role=Role.BOTH)
 
     def run(self):
-        self.log("Start IRS normalization...")
+        self.log("[irs_normalization] Start IRS normalization...")
         client = self.load('client')
         client.irsNorm_in_silico_single_center()
         self.log("IRS normalization is done...")
@@ -455,20 +466,23 @@ class MaskPreparationState(AppState):
         client = self.load('client')
 
         # prepare for limma
-        self.log("Preparing for limma...")
-        client.prepare_for_limma(self.load('stored_features'))        
-        self.log(f'Design colnames: {client.design.columns.values}')
+        self.log("[mask_preparation] Start mask preparation...")
+        client.prepare_for_limma(self.load('stored_features'))      
 
         self.log("Start mask preparation...")        
         mask = client.get_mask()
-        self.log(f"Mask is prepared. Size: {mask.shape}")
 
-        self.send_data_to_coordinator(mask, send_to_self=True, use_smpc=self.load('use_smpc'))
+        self.log(f"Mask is prepared.")
+
+        self.send_data_to_coordinator(mask, 
+                                      send_to_self=True, 
+                                      use_smpc=self.load('use_smpc'))
         
         if self.is_coordinator:
             self.store(key='variables', value=client.design.columns.values)
             self.log("Transition to mask aggregation...")
             return 'mask_aggregation'
+        
         self.log("Transition to mask update...")
         return 'mask_update'
 
@@ -479,18 +493,20 @@ class MaskAggregationState(AppState):
         self.register_transition('mask_update', role=Role.COORDINATOR)
 
     def run(self):
-        self.log("Start aggregating mask...")
+        self.log("[mask_aggregation] Start mask aggregation...")
         mask = self.gather_data(use_smpc=self.load('use_smpc'), is_json=False)
 
         k = len(self.load('variables'))
         n = len(self.load('stored_features'))        
         client_number = len(self.load('client_list'))
 
-        global_mask = utils.aggregate_masks(mask, n, k, used_SMPC=self.load('use_smpc'),
-                                          client_number=client_number)
+        global_mask = utils.aggregate_masks(mask, n, k, used_SMPC=self.load('use_smpc'))
+
+        # process mask
+        global_mask = utils.process_mask(global_mask,
+                                         client_number=client_number)        
         
-        self.log(f"Mask is aggregated, size: {global_mask.shape}")
-        
+        self.log(f"Mask is aggregated.")
         self.broadcast_data(global_mask, send_to_self=True, memo="Mask")
         self.log("Transition to mask update...")
         return 'mask_update'
@@ -503,16 +519,16 @@ class MaskUpdateState(AppState):
         self.register_transition('save_mask', role=Role.COORDINATOR)
 
     def run(self):
-        self.log("Start updating mask...")
+        self.log("[mask_update] Start mask update...")
         mask = self.await_data(n=1, is_json=False, memo="Mask")
-        mask = np.array(mask)
-        self.log(f"Mask is received..., size: {mask.shape}, type: {type(mask)}")
+        self.log(f"Mask is received.")
 
         client = self.load('client')
+        mask = mask.astype(bool)
         updated_masks = client.updated_mask(mask)
-        
-        self.log(f"Mask is updated, size: {updated_masks.shape}")
-        self.send_data_to_coordinator(updated_masks, send_to_self=True, use_smpc=self.load('use_smpc'))
+
+        self.send_data_to_coordinator(updated_masks, send_to_self=True, 
+                                      use_smpc=self.load('use_smpc'))
 
         if self.is_coordinator:
             self.log("Transition to saving mask...")
@@ -528,13 +544,16 @@ class SaveMaskState(AppState):
         self.register_transition('compute_XtY_XTX', role=Role.COORDINATOR)
 
     def run(self):
-        self.log("Start saving mask...")
+        self.log("[save_mask] Start saving mask...")
         masks = self.gather_data(use_smpc=self.load('use_smpc'), is_json=False)
-        
+
         k = len(self.load('variables'))
         n = len(self.load('stored_features'))
-        mask_glob = utils.aggregate_masks(masks, n, k, second_round=True, used_SMPC=self.load('use_smpc'))
+        mask_glob = utils.aggregate_masks(masks, n, k,
+                                          used_SMPC=self.load('use_smpc'))
         self.log("Final global mask is saved...")
+
+        mask_glob = utils.process_mask(mask_glob, second_round=True)
 
         self.log("Broadcasting mask...")
         self.broadcast_data(mask_glob, send_to_self=True, memo="MaskGlobal")
@@ -554,10 +573,11 @@ class ComputeXtState(AppState):
                                  label='Compute beta and beta stdev')
 
     def run(self):
+        self.log("[compute_XtY_XTX] Start computation of XtY and XTX...")
         client = self.load('client')
 
         global_mask = self.await_data(n=1, memo="MaskGlobal")
-        global_mask = np.array(global_mask)
+        # global_mask = np.array(global_mask)
         self.store(key='MaskGlobal', value=global_mask)
 
         self.log("Start computation of XtY and XTX...")
@@ -582,7 +602,7 @@ class ComputeBetaState(AppState):
                                  label='Compute SSE and cov_coef')
         
     def run(self):
-        self.log("Start computation of beta and beta stdev...")
+        self.log("[compute_beta] Start computation of beta and beta stdev...")
         list_of_xt_lists = self.gather_data(use_smpc=self.load('use_smpc'))
 
         self.log("XtX and XtY are received, computing beta and beta stdev...")
@@ -604,6 +624,7 @@ class ComputeBetaState(AppState):
         self.broadcast_data(beta, 
                             send_to_self=True, 
                             memo="BetaStdev")
+        # self.log(f"Type check before broadcasting: beta type: {type(beta)}")
         return 'compute_SSE'
     
 
@@ -614,7 +635,7 @@ class ComputeSSEState(AppState):
         self.register_transition('write_results', role=Role.PARTICIPANT)
 
     def run(self):
-        self.log("Start computation of SSE and cov_coef...")
+        self.log("[compute_SSE] Start computation of SSE and cov_coef...")
         beta = self.await_data(n=1, memo="BetaStdev")
         beta = np.array(beta)
 
@@ -625,7 +646,10 @@ class ComputeSSEState(AppState):
 
         self.log("SSE and cov_coef are computed, sending to coordinator...")
         self.send_data_to_coordinator(
-            [SSE, cov_coef, intensities_sum, n_measurements],
+            [SSE,
+             cov_coef, 
+             n_measurements, 
+             intensities_sum],
             send_to_self=True,
             use_smpc=self.load('use_smpc')
         )
@@ -643,7 +667,7 @@ class AggregateSSEState(AppState):
         self.register_transition('make_contrasts', role=Role.COORDINATOR)
 
     def run(self):
-        self.log("Start aggregation of SSE...")
+        self.log("[aggregate_SSE] Start aggregation of SSE and cov_coef...")
         list_of_sse_cov_coef = self.gather_data(use_smpc=self.load('use_smpc'))
 
         k = len(self.load('variables'))
@@ -657,7 +681,6 @@ class AggregateSSEState(AppState):
         sigma, cov_coef, df_residual, Amean, var = utils.compute_SSE_and_cov_coef_global(
             cov_coef, SSE, Amean, n_measurements, n, self.load('MaskGlobal')
         )
-
         self.store(key='cov_coef', value=cov_coef)
         self.store(key='var', value=var)
         self.store(key='sigma', value=sigma)
@@ -685,7 +708,7 @@ class MakeContrastsState(AppState):
         self.register_transition('fit_contasts', role=Role.COORDINATOR)
 
     def run(self):
-        self.log("Start making contrasts...")
+        self.log("[make_contrasts] Start making contrasts...")
         target_classes = self.load('target_classes')        
         contrasts_df = utils.make_contrasts(target_classes, self.load('variables'))
         self.store(key='contrasts', value=contrasts_df)
@@ -701,7 +724,7 @@ class FitContrastsState(AppState):
         self.register_transition('ebayes', role=Role.COORDINATOR)
 
     def run(self):
-        self.log("Start fitting contrasts...")
+        self.log("[fit_contasts] Start fitting contrasts...")
         contrast_matrix = self.load('contrasts').values
         ncoef = self.load('cov_coef').shape[1]
         
@@ -731,7 +754,7 @@ class eBayesState(AppState):
         self.register_transition('write_results', role=Role.COORDINATOR)
 
     def run(self):
-        self.log("Start eBayes stage...")
+        self.log("[ebayes] Start eBayes stage...")
 
         self.log("Calculating moderated t-statistics...")
         results, df_total = utils.moderatedT(
@@ -749,7 +772,6 @@ class eBayesState(AppState):
             self.load('stdev_unscaled'), 
             results,
             stdev_coef_lim=np.array([0.1, 4]), proportion=0.01)
-        self.log("B statistic is computed...")
 
         self.log("Computing p-values...")        
         results = utils.topTableT(results,
@@ -758,7 +780,6 @@ class eBayesState(AppState):
                                   self.load('stdev_unscaled'), 
                                   df_total,
                                   adjust="fdr_bh", p_value=1.0, lfc=0, confint=0.95)
-        self.log("P-values are computed...")
         self.store(key='results', value=results)
         
         if self.load('use_counts'):
@@ -780,7 +801,7 @@ class SpectralCounteBayesState(AppState):
         self.register_transition('write_results', role=Role.COORDINATOR)
 
     def run(self):
-        self.log("Start spectral count eBayes stage...")
+        self.log("[spectral_count_ebayes] Start spectral count eBayes stage...")
 
         global_min_counts = self.load('min_counts') + 1
         global_min_counts = global_min_counts.loc[self.load('stored_features')]
@@ -817,6 +838,7 @@ class WriteResults(AppState):
         self.register_transition('terminal', label='Done!')
 
     def run(self):
+        self.log("[write_results] Start writing results...")
         self.log("Awaiting results from coordinator...")
         results = self.await_data(n=1, memo="Results")
         results = pd.DataFrame.from_dict(results, orient='index')
@@ -824,6 +846,5 @@ class WriteResults(AppState):
         self.log("Writing results...")
         output_file = os.path.join(os.getcwd(), OUTPUT_DIR, self.load("result_table"))
         results.to_csv(output_file, sep="\t")
-        self.log(f"Results written to {output_file}")
         self.log("Done!")
         return 'terminal'

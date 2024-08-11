@@ -3,7 +3,7 @@ import numpy as np
 import logging
 
 logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S"
 )
 
 EXPERIMENT_TYPE = "TMT"
@@ -66,7 +66,12 @@ class Client:
         self.fitted_logcounts = None
         self.mu = None
 
-    def open_dataset(self, intensities_file_path, count_file_path, design_file_path, count_pep_file_path=None, TEST_MODE=False):
+    def open_dataset(self, 
+                     intensities_file_path, 
+                     count_file_path, 
+                     design_file_path, 
+                     count_pep_file_path=None, 
+                     TEST_MODE=False):
         """
         For LFQ-data:
         Reads data and design matrices and ensures that sample names are the same.
@@ -98,12 +103,13 @@ class Client:
             logging.error(f"Client {self.cohort_name}: Data has only one sample.")
             return False
         if len(self.prot_names) < 2:
-            logging.error(f"Client {self.cohort_name}: Data has only one protein.")
+            logging.error(f"Client {self.cohort_name}: Data has only one protein group.")
             return False
 
         logging.info(
             f"Client {self.cohort_name}: Loaded {len(self.sample_names)} samples and {len(self.prot_names)} proteins."
         )
+        logging.debug(f"Client {self.cohort_name}: number of nan values in intensities: {self.intensities.isna().sum().sum()}")
         return True
 
     def read_files(self, intensities_file_path, count_file_path, design_file_path, count_pep_file_path=None):
@@ -151,6 +157,8 @@ class Client:
             logging.info(f"Client {self.cohort_name}: Intensities are already log2 transformed.")
         else:
             logging.error(f"Client {self.cohort_name}: Failed to transform intensities.")
+        
+        logging.debug(f"Client {self.cohort_name}: Number of nan values in intensities: {self.intensities.isna().sum().sum()}")
         
         return True
     
@@ -252,6 +260,7 @@ class Client:
         logging.info(
             f"Client {self.cohort_name}:\tValidated {len(self.sample_names)} samples and {len(self.prot_names)} proteins."
         )
+        logging.debug(f"Client {self.cohort_name}: Number of nan values in intensities: {self.intensities.isna().sum().sum()}")
 
     def validate_protein_names(self, stored_features):
         """
@@ -342,6 +351,7 @@ class Client:
                 self.check_collinearity = True
                 self.coll_samples = self.design.loc[self.design[self.plex_column] == reference_col, :].index.values
                 logging.info(f"Client {self.cohort_name}:\tCollinearity will be checked.")
+        
         logging.info(f"Client {self.cohort_name}:\tCohort effects are added to the design matrix.")
 
     ######### Filtering ##################
@@ -433,6 +443,7 @@ class Client:
 
     def apply_filters(self, min_f=0.5, remove_single_peptide_prots=False):
         sample_type = SAMPLE_TYPE
+        logging.debug(f"Client {self.cohort_name}: Number of nan values in intensities: {self.intensities.isna().sum().sum()}")
 
         if remove_single_peptide_prots:
             self.remove_single_pept_prots()
@@ -453,14 +464,16 @@ class Client:
             passed_prots = not_detected[not_detected <= min_f].index.values
             logging.info(
                 f"Client {self.cohort_name}:\tProtein groups detected in less than {min_f} of all TMT-plexes will be excluded: {self.counts.shape[0] - len(passed_prots)}"
-            )            
+            )
+            logging.debug(f"Client {self.cohort_name}: Number of nan values in intensities: {self.intensities.isna().sum().sum()}")
             return self.prot_names            
         
         else:           
             na_count_in_variable, samples_per_class = self.check_not_na(sample_type)
             logging.info(
                 f"Client {self.cohort_name}:\tProtein groups detected in less than {min_f} of each target class will be excluded."
-            )    
+            )
+            logging.debug(f"Client {self.cohort_name}: Number of nan values in intensities: {self.intensities.isna().sum().sum()}")
             return na_count_in_variable, samples_per_class
 
     def update_prot_names(self, passed_prots=None):
@@ -486,7 +499,7 @@ class Client:
         # computes and stores sample medians and returns their average
         self.sample_medians = self.intensities.median(skipna=True)  # sample-wise medians
         logging.info(f"Client {self.cohort_name}:\tSample medians are computed.")
-        logging.info(f"Size of sample medians: {len(self.sample_medians)}")
+        logging.debug(f"Size of sample medians: {len(self.sample_medians)}")
         return np.mean(self.sample_medians)
 
     def mean_median_centering(self, global_mean_median):
@@ -595,6 +608,8 @@ class Client:
     ######### limma: preparation step #########
     def prepare_for_limma(self, stored_features):
         # remove unnecessary columns from the design matrix
+        logging.debug(f"Client {self.cohort_name}: Number of nan values in intensities: {self.intensities.isna().sum().sum()}")
+
         if self.experiment_type == EXPERIMENT_TYPE:
             if self.ref_type != "in_silico_reference":
                 self.design = self.design.loc[self.design[SAMPLE_TYPE] == SAMPLE_TYPE, :]
@@ -614,6 +629,12 @@ class Client:
         self.intensities = self.intensities.loc[self.prot_names, self.sample_names]
         self.n_samples = len(self.sample_names)
         logging.info(f"Client {self.cohort_name}:\tPrepared for limma. Samples: {self.n_samples}, Proteins: {len(self.prot_names)}.")
+        logging.debug(f"Client {self.cohort_name}: Number of nan values in intensities: {self.intensities.isna().sum().sum()}")
+
+        if self.use_counts:
+            # transform to pandas series
+            self.counts = self.counts.squeeze()
+
 
     def get_mask(self):
         X = self.design.values
@@ -637,27 +658,36 @@ class Client:
             else:
                 mask_X[i, :] = 1
 
+        logging.debug(f"Client {self.cohort_name}:\tMask for design matrix is created.")
+        logging.debug(f"Size of mask: {mask_X.shape}, type of mask: {type(mask_X)}")
+        logging.debug(f"Max value in mask: {np.max(mask_X)}, Min value in mask: {np.min(mask_X)}, mean value in mask: {np.mean(mask_X)}")
+        logging.debug(f"Is min == 0? {mask_X.min() == 0}, Is max == 1? {mask_X.max() == 1}")
+        
         return mask_X
 
     def updated_mask(self, mask_glob):
+        new_mask_glob = mask_glob.copy()
+
         if self.check_collinearity:
+            logging.debug(f"Client {self.cohort_name}:\tChecking collinearity and updating mask.")
+            
             for i, protein in enumerate(self.prot_names):
                 # Check if Y values all are NA for the given row
                 y_selected = self.intensities.loc[protein, self.coll_samples]
                 if np.all(np.isnan(y_selected)):
                     # Find indices of False values in mask_glob[i, len(self.target_classes):]
-                    false_indices = np.where(mask_glob[i, len(self.target_classes):] == False)[0]
+                    false_indices = np.where(new_mask_glob[i, len(self.target_classes):] == False)[0]
                     if false_indices.size > 0:
                         # Adjust index to consider the offset from len(self.target_classes)
                         last_false_index = false_indices[-1] + len(self.target_classes)
                         # Set the last False value to True
-                        mask_glob[i, last_false_index] = True
+                        new_mask_glob[i, last_false_index] = True
 
             logging.info(f"Client {self.cohort_name}:\tCollinearity check and update completed.")
 
-        mask_glob = mask_glob.astype(int)
+        new_mask_glob = new_mask_glob.astype(int)
         logging.info(f"Client {self.cohort_name}:\tCollinearity check completed.")
-        return mask_glob
+        return new_mask_glob
 
     ####### limma: linear regression #########
     def compute_XtX_XtY(self):
@@ -683,6 +713,11 @@ class Client:
         return self.XtX, self.XtY
 
     def compute_SSE_and_cov_coef(self, beta, mask_glob):
+
+        # log how many true and false values in mask_glob
+        logging.debug(f"Client {self.cohort_name}:\tNumber of True values in mask_glob: {np.sum(mask_glob)}")
+        logging.debug(f"Client {self.cohort_name}:\tNumber of False values in mask_glob: {np.sum(~mask_glob)}")
+
         X = self.design.values
         Y = self.intensities.values
         n = Y.shape[0]

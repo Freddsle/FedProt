@@ -17,7 +17,7 @@ from rpy2.robjects import conversion, default_converter
 import logging
 
 logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%d-%b-%y %H:%M:%S"
 )
 
 # get common proteins list
@@ -80,29 +80,55 @@ def aggregate_medians(mead_samples_tuples):
     # Weighted Mean of medians
     weighted_sum = np.sum(np.array(avg_medians) * np.array(total_samples))
     global_median_mean = weighted_sum / sum(total_samples)
+    logging.debug(f"Global median mean type: {type(global_median_mean)}")
     return global_median_mean
 
 
-def aggregate_masks(list_of_masks, n, k, second_round=False, used_SMPC=False, client_number=None):
+def aggregate_masks(list_of_masks, n, k, used_SMPC=False):
     mask_glob = np.zeros((n, k))
 
     if not used_SMPC:
-        client_number = len(list_of_masks)
         # non-smpc case, need to aggregate
         logging.info('SMPC is not used, aggregating masks')
-        for mask in list_of_masks:
+        
+        for i, mask in enumerate(list_of_masks):
+            mask = np.array(mask)
+            logging.debug(f"Type of recieved mask from {i}th client: {type(mask)}, shape: {mask.shape}")
+            logging.debug(f"Type of mask: {type(mask)}, type of values: {type(mask[0][0])}")
+            logging.debug(f"{i}th mask: min: {mask.min()}, max: {mask.max()}, mean: {mask.mean()}")
+            logging.debug(f"Is min == 0? {mask.min() == 0}, Is max == 1? {mask.max() == 1}")
             mask_glob += mask
+        logging.debug(f"Type of mask_glob: {type(mask_glob)}, shape: {mask_glob.shape}")
+
     else:
         # smpc case, already aggregated
         mask_glob = list_of_masks[0]
         mask_glob = np.array(mask_glob)
         logging.info('SMPC is used, masks are already aggregated')
 
-    if second_round:
-        mask_glob = mask_glob > 0
-    else:
-        mask_glob = mask_glob == client_number
+    logging.debug(f"Type of mask_glob: {type(mask_glob)}, shape: {mask_glob.shape}, type of values: {type(mask_glob[0][0])}")
+    logging.debug(f"Mask: min: {mask_glob.min()}, max: {mask_glob.max()}, mean: {mask_glob.mean()}")
+    logging.debug(f"Numpy version: {np.__version__}")
     return mask_glob
+
+
+def process_mask(mask_glob, second_round=False, client_number=None):
+
+    logging.debug(f"Type of mask_glob: {type(mask_glob)}, shape: {mask_glob.shape}, type of values: {type(mask_glob[0][0])}")
+
+    if second_round:
+        mask_glob_new = mask_glob > 0
+    else:
+        logging.debug(f"Client number: {client_number}")
+        mask_glob_new = mask_glob == client_number
+        logging.debug(f"Number of True values in mask_glob_new: {mask_glob_new.sum()}")
+
+    mask_glob = mask_glob_new
+    logging.debug(f"Type of mask_glob after round: {type(mask_glob)}, shape: {mask_glob.shape}, type of values: {type(mask_glob[0][0])}")
+    logging.debug(f"Mask: min: {mask_glob.min()}, max: {mask_glob.max()}, mean: {mask_glob.mean()}")
+    logging.debug(f"Numpy version: {np.__version__}")
+    return mask_glob
+
 
 # aggragate XtX and XtX
 def aggregate_XtX_XtY(list_of_xt_lists, n, k, used_SMPC):
@@ -118,10 +144,14 @@ def aggregate_XtX_XtY(list_of_xt_lists, n, k, used_SMPC):
         # non-smpc case, need to aggregate
         logging.info('SMPC is not used, aggregating XtX and XtY')       
         for i, pair in enumerate(list_of_xt_lists):
+            logging.debug(f"Type of recieved XtX_list[i]: {type(pair[0])}")
+            logging.debug(f"Type of recieved XtY_list[i]: {type(pair[1])}")
             XtX_list.append(pair[0])
             XtY_list.append(pair[1])
 
         for i in range(0, len(list_of_xt_lists)):
+            logging.debug(f"Type of recieved XtX[{i}]: {type(XtX_list[i])}")
+            logging.debug(f"Type of recieved XtY[{i}]: {type(XtY_list[i])}")
             XtX_glob += XtX_list[i] 
             XtY_glob  += XtY_list[i]
     else:
@@ -135,6 +165,10 @@ def aggregate_XtX_XtY(list_of_xt_lists, n, k, used_SMPC):
 
 # compute beta for lmfit
 def compute_beta_and_stdev(XtX_glob, XtY_glob, n, k, mask_glob):
+
+    logging.debug(f"Type of XtX_glob in compute_beta_and_stdev: {type(XtX_glob)}")
+    logging.debug(f"Type of XtY_glob in compute_beta_and_stdev: {type(XtY_glob)}")
+
     stdev_unscaled = np.zeros((n, k))
     beta = np.zeros((n, k))
 
@@ -149,6 +183,8 @@ def compute_beta_and_stdev(XtX_glob, XtY_glob, n, k, mask_glob):
         stdev_unscaled[i, ~mask] = np.sqrt(diagonal)   
 
     logging.info(f"Detected partial NA coefficients for {mask_glob.any(axis=1).sum()} probe(s).")
+    logging.debug(f"Type of beta: {type(beta)}")
+    logging.debug(f"Type of stdev_unscaled: {type(stdev_unscaled)}")
     return beta, stdev_unscaled
 
 
@@ -168,12 +204,20 @@ def aggregate_SSE_and_cov_coef(list_of_sse_cov_coef, n, k, used_smpc, number_of_
         intensities_sum = []
 
         for pair in list_of_sse_cov_coef:
+            logging.debug(f"Type of recieved SSE_list: {type(pair[0])}")
+            logging.debug(f"Type of recieved cov_coef_list: {type(pair[1])}")
+            logging.debug(f"Type of recieved n_measurements_list: {type(pair[2])}")
+            logging.debug(f"Type of recieved intensities_sum: {type(pair[3])}")
             SSE_list.append(pair[0])
             cov_coef_list.append(pair[1])
             n_measurements_list.append(pair[2])
             intensities_sum.append(pair[3])
 
         for c in range(0, number_of_clients):
+            logging.debug(f"Type of recieved cov_coef{c}: {type(cov_coef_list[c])}")
+            logging.debug(f"Type of recieved SSE{c}: {type(SSE_list[c])}")
+            logging.debug(f"Type of recieved n_measurements{c}: {type(n_measurements_list[c])}")
+            logging.debug(f"Type of recieved intensities_sum{c}: {type(intensities_sum[c])}")
             cov_coef += cov_coef_list[c]
             Amean += intensities_sum[c]
             n_measurements += n_measurements_list[c]
@@ -186,8 +230,8 @@ def aggregate_SSE_and_cov_coef(list_of_sse_cov_coef, n, k, used_smpc, number_of_
         for i in range(0, n):
             SSE[i] += sse_cov_coef[0][i]   
         cov_coef += sse_cov_coef[1]
-        Amean += sse_cov_coef[2]
-        n_measurements += sse_cov_coef[3]
+        n_measurements += sse_cov_coef[2]
+        Amean += sse_cov_coef[3]
 
     return SSE, cov_coef, n_measurements, Amean
 

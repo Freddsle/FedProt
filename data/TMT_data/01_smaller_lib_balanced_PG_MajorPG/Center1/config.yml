@@ -4,7 +4,7 @@ fedprot:
   intensities: pg_intensities.tsv
   sep: '\t'
   
-  use_smpc: true
+  use_smpc: false
   
   max_na_rate: 0.8
   log_transformed: false
@@ -17,6 +17,7 @@ fedprot:
   use_median: true  # true
   use_irs: true
   remove_single_pep_protein: true
+  remove_single_value_design: false
   use_counts: true
   
   only_shared_proteins: false
