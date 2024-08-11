@@ -167,6 +167,13 @@ featurecloud app download featurecloud.ai/fedprot
 # OR build
 featurecloud app build featurecloud.ai/fedprot
 ```
+## Test data
+
+You can find example test data in:
+- `data/bacterial_data/balanced` - clients lab_A,lab_B,lab_C,lab_D,lab_E,
+- `data/TMT_data/01_smaller_lib_balanced_PG_MajorPG` - Center1,Center2,Center3
+- and `data/simulated_data/balanced`, `data/simulated_data/mild_imbalanced`, `data/simulated_data/imbalanced` - clients lab1,lab2,lab3.
+
 
 ## Run
 
