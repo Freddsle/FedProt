@@ -307,9 +307,10 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
 
     for i, dataset in enumerate(datasets):
         df = dfs[dataset].filter([f'{what}DEqMS']+[what+method for method in methods])
-        axes[i].set_title(titles[i] if titles else dataset, fontsize=16)
-        axes[i].set_xlabel(f'{suptitle} {comparsions[i]}, \nDEqMS',fontsize=12)
-        axes[i].set_ylabel(f'{suptitle} {comparsions[i]}, \nother methods',fontsize=12)
+        axes[i].set_title(titles[i] if titles else dataset, fontsize=14)
+        axes[i].set_xlabel(f'{suptitle} {comparsions[i]}, DEqMS',fontsize=10)
+        if i == 0:
+            axes[i].set_ylabel(f'{suptitle} {comparsions[i]}, other methods',fontsize=10)
 
         mins = []
         maxs = []
@@ -359,6 +360,8 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
 
     plt.tight_layout()
     plt.show()
+
+    return fig
 
 
 def display_table(ax, df, methods, color_dict, what, use_RMSE, after_comma):
@@ -446,13 +449,14 @@ def plot_stats_for_topN(dfs,
                         min_n_genes=10, max_n_genes=1000, step=10,
                         text="",
                         figfile="", suptitle="", sharey=False,
+                        figsize = (13, 4),
                         titles=None):
 
     """Calculated and plots statisctics for top N genes ordered by p-value.
     Top genes are chosen based on a sliding threshold, starting from 'min_n_genes' and moving to 'max_n_genes' with 'step'."""
     
     cmap = LinearSegmentedColormap.from_list("from_dict", list(color_dict["Methods"].values()))
-    fig, all_axes = plt.subplots(len(metrics), len(datasets), figsize=(13,4*len(metrics)), sharey=sharey)
+    fig, all_axes = plt.subplots(len(metrics), len(datasets), figsize=(figsize[0],figsize[1]*len(metrics)), sharey=sharey)
     all_stats = {}
     min_ylim = {}
     max_ylim = {}
@@ -490,10 +494,10 @@ def plot_stats_for_topN(dfs,
 
             # axes[i].set_yscale('log')
             if k == len(metrics) - 1:
-                tmp = axes[i].set_xlabel("number of top-ranked proteins", fontsize=14)
+                tmp = axes[i].set_xlabel("number of top-ranked proteins", fontsize=10)
             if i == 0:
                 if metric == "Jaccard":
-                    tmp = axes[i].set_ylabel(f"{metric} similarity coefficient", fontsize=14)
+                    tmp = axes[i].set_ylabel(f"{metric} similarity coefficient", fontsize=10)
                 else:
                     tmp = axes[i].set_ylabel(f"{metric}", fontsize=14)
                 if text:
@@ -502,9 +506,9 @@ def plot_stats_for_topN(dfs,
                 axes[i].get_legend().remove()
             if k == 0:
                 if titles:
-                    tmp = axes[i].set_title(titles[i], fontsize=20)
+                    tmp = axes[i].set_title(titles[i], fontsize=14)
                 else:
-                    tmp = axes[i].set_title(ds, fontsize=20)
+                    tmp = axes[i].set_title(ds, fontsize=14)
             all_stats[metric][ds] = stats
 
     for k in range(len(metrics)):
@@ -520,10 +524,14 @@ def plot_stats_for_topN(dfs,
             ax.set_yticks(np.arange(0, 1.1, 0.1))
 
     if suptitle:
-        fig.suptitle(suptitle, fontsize=24)
+        fig.suptitle(suptitle, fontsize=14)
     if figfile:
         fig.savefig(figfile)
-    return all_stats
+
+    plt.tight_layout()
+    plt.show()
+
+    return all_stats, fig
 
 
 def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
@@ -553,18 +561,18 @@ def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
             axes[i].plot(num_top_genes, mean_scores, label=method, color=color_dict["Methods"][method])
             axes[i].fill_between(num_top_genes, mean_scores - std_deviation, mean_scores + std_deviation, color=color_dict["Methods"][method], alpha=0.1)
         
-        axes[i].set_title(f"Simulated {titles[i].lower()}", fontsize=16)
-        axes[i].set_xlabel("Number of top-ranked proteins", fontsize=14)
+        axes[i].set_title(f"Simulated {titles[i].lower()}", fontsize=14)
+        axes[i].set_xlabel("Number of top-ranked proteins", fontsize=10)
         axes[i].set_yticks(np.arange(0, 1.1, 0.1))
         if i == 0:
-            axes[i].set_ylabel("Jaccard similarity coefficient", fontsize=14)
+            axes[i].set_ylabel("Jaccard similarity coefficient", fontsize=10)
             axes[i].legend(title="Method")
 
         # add y ticks for the second plot (because they are shared and was removed by sharey=True)
 
     if figfile:
         fig.savefig(figfile)
-
+    plt.tight_layout()
     plt.show()
 
 

@@ -4,7 +4,8 @@ fedprot:
   intensities: pg_intensities.tsv
   sep: '\t'
   
-  use_smpc: false
+  # use_smpc: false
+  use_smpc: true
   
   max_na_rate: 0.8
   log_transformed: false

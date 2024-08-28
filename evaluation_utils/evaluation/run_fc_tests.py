@@ -21,7 +21,7 @@ data_dir = os.path.abspath("/home/yuliya/repos/cosybio/FedProt/")
 experiments = list()
 result_file_names = list()
 
-## Baterial dataset
+# Baterial dataset
 bacterial_experiment = fc_utils.Experiment(
         clients=[os.path.join(data_dir, "data", "bacterial_data", "balanced", "lab_A"),
                  os.path.join(data_dir, "data", "bacterial_data", "balanced", "lab_B"),

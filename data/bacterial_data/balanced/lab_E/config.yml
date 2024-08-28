@@ -7,8 +7,8 @@ fedprot:
   name_cohort: "lab_E"
   TEST_MODE: true
   
-  use_smpc: false
-  # use_smpc: true
+  # use_smpc: false
+  use_smpc: true
   
   max_na_rate: 0.8
   log_transformed: false
