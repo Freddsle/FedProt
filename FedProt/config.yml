@@ -1,21 +1,33 @@
 fedprot:
-  counts: protein_counts.tsv
-  design: design.tsv
-  intensities: protein_groups_matrix.tsv
-  sep: '\t'
+  counts: protein_counts.tsv       
+  design: design.tsv       
+  intensities: protein_groups_matrix.tsv 
+
+  sep: '\t' 
   
-  use_smpc: true
+  use_smpc: true            # or false, control using SMPC
   
   max_na_rate: 0.8
   log_transformed: false
 
-  experiment_type: 'DIA'
-  remove_single_pep_protein: false
-  use_counts: true
+  experiment_type: 'TMT'            # default is "DIA"
+  ref_type: 'in_silico_reference'   # optional, only if "TMT" specified
+  plex_covariate: true              # optional, only if "TMT" specified
+  plex_column: "Pool"               # optional, only if "TMT" specified
 
-  label: "condition"
-  target_classes: ["Glu", "Pyr"]
+  use_median: true                  # default - false
+  use_irs: true                     # default - false
+  
+  use_counts: true
+  only_shared_proteins: false
+  
+  remove_single_pep_protein: true   # default - false  
+  remove_single_value_design: true  # default - true, privacy filter
+  
+  
+  TEST_MODE: false                  # optional, default - false. Use only for testing - for skip additional privacy protection filters.
+
+  target_classes: [...]             # example - ["heathy", "FSGS"]
   covariates: []
 
   result_table: "DPE.csv"
-  

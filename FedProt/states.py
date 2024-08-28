@@ -31,7 +31,8 @@ class InitialState(AppState):
         self.read_config()
 
         if self.load('use_smpc'):
-            self.configure_smpc()
+            self.configure_smpc(exponent=13) 
+            # self.configure_smpc()
         # defining the client
         cohort_name = self.id
 

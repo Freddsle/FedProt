@@ -62,6 +62,8 @@ def filter_features_na_rate(list_of_na_counts_tuples, max_na_rate=0.8):
 
     # filter proteins based on NA counts
     prot_na_table = prot_na_table.loc[:, samples_per_target.keys()]
+    # transform values to int type
+    prot_na_table = prot_na_table.astype(int)
     samples_series = pd.Series(samples_per_target)
     na_perc = prot_na_table.div(samples_series, axis=1)
 
@@ -104,6 +106,8 @@ def aggregate_masks(list_of_masks, n, k, used_SMPC=False):
         # smpc case, already aggregated
         mask_glob = list_of_masks[0]
         mask_glob = np.array(mask_glob)
+        # transform to int type
+        mask_glob = mask_glob.astype(int)
         logging.info('SMPC is used, masks are already aggregated')
 
     logging.debug(f"Type of mask_glob: {type(mask_glob)}, shape: {mask_glob.shape}, type of values: {type(mask_glob[0][0])}")
