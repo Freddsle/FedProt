@@ -8,6 +8,8 @@ https://arxiv.org/abs/2407.15220
 
 It is a federated version of state of the art [DEqMS](https://pubmed.ncbi.nlm.nih.gov/32205417/) workflow. 
 
+The FeatureCloud app: https://featurecloud.ai/app/fedprot.
+
 Current implementaion is available for DIA-LFQ and DDA-TMT MS data, as well as for any other data type that does not require additional preprocessing. 
 
 Available normalization methods:
