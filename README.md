@@ -207,31 +207,10 @@ More about it you can read in the [FedProt paper](https://arxiv.org/abs/2407.152
 # Evaluation
 
 Required libraries to run FedProt evaluation code:
-1. R:
-   ```
-   DEqMS
-   tidyverse        # purrr, dplyr, ggplot2
-   ggrepel
-   gridExtra
-   grid
-   patchwork
-   data.table
-   foreach
-   MetaVolcanoR
-   RankProd
-   invgamma
-   RobNorm 
-   ```
-2. Python:
-   ```
-   pandas
-   numpy
-   scipy
-   statsmodels
-   matplotlib
-   yaml
-   upsetplot
-   ```
+1. R (v.4.2.0) libraries: DEqMS v1.16.0, limma v3.54.2, diann v1.0.1, RobNorm v0.1.0, invgamma v1.1, RankProd v3.24.0, MetaVolcanoR v1.12.0, ggrepel v0.9.3, data.table v1.14.8, gridExtra v2.3, patchwork v1.1.2, reshape2 v1.4.4, matrixStats v1.3.0, 
+tidyverse: v2.0.0 (includes ggplot2 v3.4.2, dplyr v1.1.4, purrr v1.0.2, readr v2.1.4, tidyr v1.3.1).
+
+2. Python (v.3.11.9) packages:  pandas v.2.2.2, numpy v.2.0.0, statsmodels v.0.14.2, scipy v.1.14.0, matplotlib v.3.8.4, seaborn v.0.13.2, scikit-learn v.1.5.0, upsetplot v.0.9.0, plotly v.5.22.0. 
 
 ## Run the evaluation:
 
