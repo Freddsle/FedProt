@@ -186,7 +186,7 @@ You can run FedProt as a standalone app in the FeatureCloud test-bed [FeatureClo
 featurecloud test start --controller-host=http://localhost:8000 --app-image=fedprot --query-interval=1 --client-dirs=lab_A,lab_B,lab_C,lab_D,lab_E
 ```
 
-The results could be found in the featurecloud tests folder. 
+The results could be found in the featurecloud tests folder. Typical run takes less then 4 minutes.
 
 You can use provided example data or you own data.
 
@@ -240,6 +240,8 @@ You can more quickly familiarize yourself with how FedProt works by using the  `
 Be aware that this version does not have SMPC and runs locally, only as an introduction and test.
 
 The examples and evaluation is in `evaluation` folder. Evaluation was done using 5 datasets, two real-world: bacterial DIA-LFQ and human plasma DDA-TMT, and 3 simulated.
+
+The FedProt app and evaluation have beedn tested on platform: x86_64-conda-linux-gnu (64-bit) running under: Ubuntu 22.04.4 LTS.
 
 # Repo structure:
 
