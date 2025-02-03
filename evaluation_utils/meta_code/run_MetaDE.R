@@ -200,6 +200,8 @@ for (i in 1:3){ # Stouffer,roP(rth=2), Fisher
                         )
     colnames(result)[seq(length(cohorts) + 1, length(cohorts) + 3)] <- c("stat", "pval", "FDR")
     result$ID <- rownames(result)
+    # move ID column to the front
+    result <- result[, c(ncol(result), 1:(ncol(result) - 1))]
     write.table(result, paste0(w_dir, "/MA_", meta.method, ".tsv"), row.names=F, sep="\t", quote = FALSE, dec = ".")
     print(dim(result))  
     rm(meta.res, result)

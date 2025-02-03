@@ -43,5 +43,7 @@ result <- cbind(pvals,fdr,avgL2FC)
 dim(result)
 result <- as.data.frame(result)
 result$ID <- rownames(result)
+# put "ID" in the first place in the table
+result <- result[,c(ncol(result),1:(ncol(result)-1))]
 write.table(result,paste0(w_dir,"/MA_RankProd.tsv"),row.names=F,sep="\t", quote = FALSE,dec = ".")
 	

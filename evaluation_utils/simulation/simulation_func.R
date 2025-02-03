@@ -41,7 +41,7 @@ select_proportions <- function(mode_version){
         percent_batch1 <- 0.4
         percent_batch2 <- 0.5
         percent_batch3 <- 0.66
-    } else if(mode_version == "imbalanced" || mode_version == "balanced_imbalanced"){
+    } else if(mode_version == "imbalanced" || mode_version == "strong_imbalanced"){
         percent_batch1 <- 0.2
         percent_batch2 <- 0.5
         percent_batch3 <- 0.7
@@ -62,9 +62,13 @@ generate_data <- function(
     ){
 
     # add A condition
-    data_mu1 <- sim.dat.fn(row.frac=frac_1, col.frac=col_frac_A, mu.up=mu_1, mu.down=0, n=2500, m=m, nu.fix=TRUE)
+    data_mu1 <- sim.dat.fn(
+        row.frac=frac_1, col.frac=col_frac_A, mu.up=mu_1, mu.down=0, 
+        n=2500, m=m, nu.fix=TRUE)
     # add B condition
-    data_mu2 <- sim.dat.fn(row.frac=frac_1, col.frac=col_frac_B, mu.up=0, mu.down=mu_1, n=2500, m=m, nu.fix=TRUE)
+    data_mu2 <- sim.dat.fn(
+        row.frac=frac_1, col.frac=col_frac_B, mu.up=0, mu.down=mu_1, 
+        n=2500, m=m, nu.fix=TRUE)
 
     # % of confounder in batches
     b_proportions <- select_proportions(mode_version)
@@ -73,8 +77,13 @@ generate_data <- function(
     batch2_size <- round(b_proportions[[2]] * length(batch_info[batch_info$batch == "batch2" & batch_info$condition == "B",]$file))
     batch3_size <- round(b_proportions[[3]] * length(batch_info[batch_info$batch == "batch3" & batch_info$condition == "B",]$file))
     need_to_generate <- (batch1_size + batch2_size + batch3_size) / m
+
     # add confounder
-    data_mu7 <- sim.dat.fn(row.frac=frac_7, col.frac=need_to_generate, mu.up=0, mu.down=-1*mu_4, n=1000, m=m,  nu.fix=TRUE)
+    data_mu7 <- sim.dat.fn(
+        row.frac=frac_7, col.frac=need_to_generate, mu.up=0, mu.down=-1*mu_4, 
+        n=1000, 
+        m=m,  
+        nu.fix=TRUE)
     cat(ncol(data_mu7$dat) * need_to_generate, "\n")
 
     new_names <- c(

@@ -221,3 +221,62 @@ irsNorm_in_silico_single_center <- function(data, metadata, pool_col = "Pool",
   }
 
 } 
+
+
+fix_missing <- function(df_missing, df_full, metadata) {
+  # Convert df_missing to long format
+  missing_long <- df_missing %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("feature") %>%
+    pivot_longer(
+      cols = -feature,
+      names_to = "file",
+      values_to = "value_missing"
+    )
+  
+  # Convert df_full to long format
+  full_long <- df_full %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("feature") %>%
+    pivot_longer(
+      cols = -feature,
+      names_to = "file",
+      values_to = "value_full"
+    )
+  
+  # Join with metadata to associate condition and batch
+  joined_long <- missing_long %>%
+    left_join(full_long, by = c("feature", "file")) %>%
+    left_join(metadata, by = "file")
+  
+  # Within each group (feature, condition, batch):
+  # if fewer than 2 non-NA values exist, replace missing entries
+  # from df_full until there are at least 2 non-NA values
+  fixed_long <- joined_long %>%
+    group_by(feature, condition, batch) %>%
+    mutate(
+      non_na_count = sum(!is.na(value_missing)),
+      needed = pmax(0, 2 - non_na_count),               # how many to fill
+      # rank missing entries within the group
+      missing_rank = if_else(is.na(value_missing), row_number(), NA_integer_),
+      # fill only the first 'needed' missing positions
+      fill_flag = if_else(is.na(value_missing) & missing_rank <= needed, TRUE, FALSE),
+      value_fixed = if_else(fill_flag, value_full, value_missing)
+    ) %>%
+    ungroup()
+  
+  # Count how many values were replaced
+  replaced_count <- sum(fixed_long$fill_flag, na.rm = TRUE)
+  message("Number of replaced values: ", replaced_count, "\n")
+  
+  # Reshape back to wide format
+  df_fixed <- fixed_long %>%
+    select(feature, file, value_fixed) %>%
+    pivot_wider(
+      names_from = file,
+      values_from = value_fixed
+    ) %>%
+    tibble::column_to_rownames("feature")
+  
+  return(df_fixed)
+}

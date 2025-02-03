@@ -33,6 +33,7 @@ def read_results(workdir,
     df["lfc_DEqMS"] = DEqMS["logFC"]
     df["AvgExpr_DEqMS"] = DEqMS["AveExpr"]
     logging.info(f"Results loaded for DEqMS with {DEqMS.shape[0]} proteins.")
+    logging.info(f"Head: \n {DEqMS.head(1)}")
 
     # FedProt
     fedprot = pd.read_csv(workdir+fedprot_name, sep="\t", index_col=0)
@@ -40,6 +41,7 @@ def read_results(workdir,
     # df["pv_FedProt"] = fedprot["sca.P.Value"]
     df["lfc_FedProt"] = fedprot["logFC"]
     logging.info(f"Results loaded for FedProt with {fedprot.shape[0]} proteins.")
+    logging.info(f"Head: \n {fedprot.head(1)}")
 
     if only_two:
         if corrected_deqms_name:
@@ -65,6 +67,7 @@ def read_results(workdir,
                                     is_sorted=False, returnsorted=False)
     df["pv_Fisher"] = pd.Series(adj_pval,index=ma_cm["metap"].index)
     logging.info(f"Results loaded for Fisher with {ma_cm.shape[0]} proteins.")
+    logging.info(f"Head: \n {ma_cm.head(1)}")
 
     # REM
     ma_rem = pd.read_csv(workdir+rem_name, sep="\t")
@@ -77,6 +80,7 @@ def read_results(workdir,
                                       is_sorted=False, returnsorted=False)
     df["pv_REM"] = pd.Series(adj_pval,index=ma_rem["randomP"].index)
     logging.info(f"Results loaded for REM with {ma_rem.shape[0]} proteins.")
+    logging.info(f"Head: \n {ma_rem.head(1)}")
 
     ### Stoufer 
     if simulated:
@@ -87,6 +91,7 @@ def read_results(workdir,
     df["pv_Stouffer"] = stoufer["FDR"]
     df["lfc_Stouffer"] = df["lfc_Fisher"]  # take logFC from MetaVolcanoR
     logging.info(f"Results loaded for Stouffer with {stoufer.shape[0]} proteins.")
+    logging.info(f"Head: \n {stoufer.head(1)}")
 
     ### RankProd
     if simulated:
@@ -98,6 +103,7 @@ def read_results(workdir,
     df["pv_RankProd"] = rankprod["FDR"]
     df["lfc_RankProd"] = rankprod["avgL2FC"] 
     logging.info(f"Results loaded for RankProd with {rankprod.shape[0]} proteins.")
+    logging.info(f"Head: \n {rankprod.head(1)}")
 
     df = pd.DataFrame.from_dict(df)
     if drop_na:
@@ -190,11 +196,17 @@ def calculate_performance_metrics(
         Prec = TP / (TP + FP) if (TP + FP) > 0 else 0
         Rec = TP / (TP + FN) if (TP + FN) > 0 else 0
         F1 = 2 * (Prec * Rec) / (Prec + Rec) if Prec and Rec else 0
-        MCC = (TP * TN - FP * FN) / np.sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+        # MCC = (TP * TN - FP * FN) / np.sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
         Jaccard_i = len(T.intersection(P)) / len(T.union(P)) if len(T.union(P)) > 0 else 0
 
+        logging.info(f"Performance metrics calculated for {m} method.")
+        logging.info(f"TP number: {TP}, FP number: {FP}, TN number: {TN}, FN number: {FN}.")
+        logging.info(f"Number of genes total: {len(all_genes)}, DEqMS: {len(T)}, {m}: {len(P)}.")
+
         results[m] = {"Number": len(T), "TP": TP, "FP": FP, "TN": TN, "FN": FN, 
-                      "Precision": Prec, "Recall": Rec, "F1": F1, "MCC": MCC, "Jaccard": Jaccard_i}
+                      "Precision": Prec, "Recall": Rec, "F1": F1, 
+                    #   "MCC": MCC, 
+                      "Jaccard": Jaccard_i}
 
     logging.info(f"Performance metrics calculated for {'all' if top_genes == -1 else top_genes} genes.")
     return results
@@ -283,81 +295,167 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                 what="pv_", 
                 text="", dotsize=1,
                 datasets=["Balanced", "Imbalanced"],
-                add_table=True, sharey=True, sharex=True,
+                add_table=True, 
+                sharey=True, 
+                sharex=False,
                 comparsions=["pyr/glu", "pyr/glu"],
                 use_RMSE=False,
-                figsize=(11,4.5), after_comma=3,
+                figsize=(11,4.5), 
+                after_comma=3,
                 show_legend=True,
                 set_lims=None,
-                titles=None):
+                titles=None,
+                adjust_structure=None):
     """
     Function to plot results based on different datasets and methods.
-    """
-    logging.basicConfig(level=logging.INFO, format='%(message)s')
-    fig, axes = plt.subplots(1, len(datasets), figsize=figsize, sharey=sharey)
-    # plt.subplots_adjust(bottom=0.2)
 
+    ARGUMENTS (unchanged):
+    ----------------------
+    ...
+    """
+
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+
+    # --------------------------------------------------------------------------
+    # 1) Decide how many rows, cols, and which dataset order
+    # --------------------------------------------------------------------------
+    if adjust_structure is not None:
+        (nrows, ncols) = adjust_structure[0]  # e.g., (2,2)
+        dataset_order = adjust_structure[1]   # e.g., ['dat1','dat2','dat4','dat3']
+        if sharey is True:
+            sharey = 'row'  
+        num_plots = len(dataset_order)
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize,
+                                 sharey=sharey, sharex=sharex)
+        axes_flat = axes.flatten() if nrows * ncols > 1 else [axes]
+        used_datasets = dataset_order
+    else:
+        nrows = 1
+        ncols = len(datasets)
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize,
+                                 sharey=sharey, sharex=sharex)
+        axes_flat = axes if ncols > 1 else [axes]
+        used_datasets = datasets
+
+    # --------------------------------------------------------------------------
+    # 2) Check if we are using p-values or logFC, decide suptitle
+    # --------------------------------------------------------------------------
     if what == "pv_":
-        max_p_val = np.max(np.abs(dfs[datasets[0]]['pv_DEqMS']))
+        max_p_val = np.max(np.abs(dfs[used_datasets[0]]['pv_DEqMS']))
         suptitle = "$-log_{10}(adj.p-val.)$" if max_p_val > 1.1 else "adj.p-val."
-        logging.info(f"Plotting corrs using p-vals - {'log-transformed' if max_p_val > 1.1  else 'not log-transformed'}.")
+        logging.info(f"Plotting correlation using p-vals - {'log-transformed' if max_p_val > 1.1  else 'not log-transformed'}.")
     elif what == "lfc_":
         suptitle = "Log2FC"
-        logging.info(f"Plotting corrs using logFC values.")
+        logging.info("Plotting correlation using logFC values.")
 
-    for i, dataset in enumerate(datasets):
-        df = dfs[dataset].filter([f'{what}DEqMS']+[what+method for method in methods])
-        axes[i].set_title(titles[i] if titles else dataset, fontsize=14)
-        axes[i].set_xlabel(f'{suptitle} {comparsions[i]}, DEqMS',fontsize=10)
-        if i == 0:
-            axes[i].set_ylabel(f'{suptitle} {comparsions[i]}, other methods',fontsize=10)
+    # --------------------------------------------------------------------------
+    # 3) Iterate over each dataset in the chosen order
+    # --------------------------------------------------------------------------
+    for i, dataset in enumerate(used_datasets):
+        ax = axes_flat[i]
+        df = dfs[dataset].filter([f'{what}DEqMS'] + [what + method for method in methods])
+
+        row_idx = i // ncols
+        col_idx = i % ncols
+
+        # Set subplot title
+        if titles is not None and i < len(titles):
+            ax.set_title(titles[i], fontsize=14)
+        else:
+            ax.set_title(dataset, fontsize=14)
+
+        # X-label
+        ax.set_xlabel(f'{suptitle} {comparsions[i] if i < len(comparsions) else ""}, DEqMS', fontsize=10)
+        
+        # Y-label only on the leftmost column
+        if col_idx == 0:
+            ax.set_ylabel(f'{suptitle} {comparsions[i] if i < len(comparsions) else ""}, other methods', fontsize=10)
 
         mins = []
         maxs = []
 
+        # ----------------------------------------------------------------------
+        # 4) Scatter each method
+        # ----------------------------------------------------------------------
         for method in methods:
-            x = df[what+"DEqMS"].values
-            y = df[what+method].values
+            x = df[what + "DEqMS"].values
+            y = df[what + method].values
+
             if method == "FedProt":
-                # use triangle marker for FedProt
-                axes[i].scatter(x, y, s=1.5, color=color_dict["Methods"][method], alpha=0.6, edgecolors=color_dict["Methods"][method], 
-                                marker='^', label=method if i == 0 else "")
+                ax.scatter(x, y, s=1.5, 
+                           color=color_dict["Methods"][method], 
+                           alpha=0.6, edgecolors=color_dict["Methods"][method], 
+                           marker='^', label=method if (i == 0) else "")
             else:
-                axes[i].scatter(x, y, s=dotsize, color=color_dict["Methods"][method], alpha=0.6, edgecolors=color_dict["Methods"][method],
-                                label=method if i == 0 else "")
-            
+                ax.scatter(x, y, s=dotsize, 
+                           color=color_dict["Methods"][method], 
+                           alpha=0.6, edgecolors=color_dict["Methods"][method],
+                           label=method if (i == 0) else "")
+
             mins.append(np.min(y))
             maxs.append(np.max(y))
 
-        y_min, y_max = min(mins) - max(maxs) * 0.01, max(maxs) + max(maxs) * 0.02
-        x_min, x_max = np.min(df[what+"DEqMS"]) - np.max(df[what+"DEqMS"]) * 0.01, np.max(df[what+"DEqMS"]) + np.max(df[what+"DEqMS"]) * 0.01
+        # ----------------------------------------------------------------------
+        # 5) Determine axis limits
+        # ----------------------------------------------------------------------
+        y_min, y_max = min(mins) - max(maxs)*0.01, max(maxs) + max(maxs)*0.02
+        x_min, x_max = ( np.min(df[what + "DEqMS"]) - np.max(df[what + "DEqMS"])*0.01,
+                         np.max(df[what + "DEqMS"]) + np.max(df[what + "DEqMS"])*0.01 )
 
-        axes[i].set_xlim(x_min, x_max)
-        axes[i].set_ylim(y_min, y_max)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
 
-        # Adjust limits if necessary
-        if set_lims:
+        if set_lims is not None and i < len(set_lims):
             if len(set_lims[i]) == 2:
-                axes[i].set_xlim(set_lims[i][0], set_lims[i][1])
-                y_min, y_max = set_lims[i][0], set_lims[i][1]
+                ax.set_xlim(set_lims[i][0], set_lims[i][1])
+                ax.set_ylim(set_lims[i][0], set_lims[i][1])
                 x_min, x_max = set_lims[i][0], set_lims[i][1]
-                axes[i].set_ylim(set_lims[i][0], set_lims[i][1])
 
-        # Display table conditionally
+        # ----------------------------------------------------------------------
+        # 6) Display table if requested
+        # ----------------------------------------------------------------------
         if add_table:
-            display_table(axes[i], df, methods, color_dict, what, use_RMSE, after_comma)
+            display_table(ax, df, methods, color_dict, what, use_RMSE, after_comma)
 
-        # Plot identity line
-        axes[i].plot([x_min, x_max], [x_min, x_max], color="gray", ls="--", lw=0.2)
+        # ----------------------------------------------------------------------
+        # 7) Identity line
+        # ----------------------------------------------------------------------
+        ax.plot([x_min, x_max], [x_min, x_max], color="gray", ls="--", lw=0.2)
 
+    # --------------------------------------------------------------------------
+    # 8) Create legend in the first row, or overall
+    # --------------------------------------------------------------------------
     if show_legend:
-        handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.1), 
-                title="\nMethods", fontsize="large", markerscale=5, frameon=False, title_fontsize="large", ncol=len(methods))
+        if nrows * ncols == 1:
+            handles, labels = axes_flat[0].get_legend_handles_labels()
+        else:
+            handles, labels = axes_flat[0].get_legend_handles_labels()
 
+        # === CHANGE 1: place legend at the bottom of the figure ===
+        fig.legend(
+            handles, labels,
+            loc='lower center',      # changed from 'upper center'
+            bbox_to_anchor=(0.5, -0.05),  # negative y shifts it below the figure
+            title="\nMethods",
+            fontsize="large",
+            markerscale=5,
+            frameon=False,
+            title_fontsize="large",
+            ncol=len(methods)
+        )
+
+    # --------------------------------------------------------------------------
+    # 9) Text below figure if desired
+    # --------------------------------------------------------------------------
     if text:
         plt.figtext(0.5, 0.01, text, ha="center", fontsize=12)
 
+    # === CHANGE 2: give enough space at the bottom for the legend ===
+    plt.subplots_adjust(bottom=0.2)
+
+    # --------------------------------------------------------------------------
+    # 10) Final adjustments
+    # --------------------------------------------------------------------------
     plt.tight_layout()
     plt.show()
 
@@ -412,6 +510,7 @@ def calc_stats_TOP(
 
     T = set(de.index.values)
     F = all_genes.difference(T)
+
     if len(set(stats).intersection(set(["TP", "TN", "FP", "FN", "Precision", "Recall", "F1", "Jaccard"]))) > 0:
         for m in methods:
             de2 = df.sort_values(by="pv_" + m, ascending=False)
@@ -566,9 +665,8 @@ def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
         axes[i].set_yticks(np.arange(0, 1.1, 0.1))
         if i == 0:
             axes[i].set_ylabel("Jaccard similarity coefficient", fontsize=10)
+        if i == len(datasets) - 1:
             axes[i].legend(title="Method")
-
-        # add y ticks for the second plot (because they are shared and was removed by sharey=True)
 
     if figfile:
         fig.savefig(figfile)
