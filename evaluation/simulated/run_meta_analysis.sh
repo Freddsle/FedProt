@@ -7,7 +7,7 @@ number_of_files=${3:-"50"}
 # Navigate to the directory where the files and scripts are located
 cd ${base_path}/${mode}/meta
 
-# Loop through each set of files from 1 to 50
+# Loop through each set of files from 1 to number_of_files
 for j in $(seq 1 $number_of_files)
 do
     # Run the R scripts for meta-analysis on each triple of files
