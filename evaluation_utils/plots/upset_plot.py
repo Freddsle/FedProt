@@ -1,6 +1,7 @@
 import pandas as pd
 from upsetplot import UpSet, from_memberships
 import matplotlib.pyplot as plt
+import warnings
 
 
 def generate_upset_plot(intensities, colname, title, splited=False, 
@@ -40,7 +41,11 @@ def generate_upset_plot(intensities, colname, title, splited=False,
 
     # Creating and displaying the UpSet plot
     upset = UpSet(example, subset_size='count', show_counts=True, sort_by='cardinality')
-    upset.plot()
+    # Suppress FutureWarnings from the upsetplot library using a context manager
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        upset.plot()
+
     plt.title(title)
     # control the size of the plot
     plt.gcf().set_size_inches(size_fig[0], size_fig[1])

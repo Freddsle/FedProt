@@ -14,7 +14,13 @@ filter_na_proteins <- function(dt, meta_data, quantitative_column_name) {
     return(dt)
 }
 
-filter_per_center <- function(intensities, metadata, quantitative_column_name, centers, center_column_name, min_number=2) {
+filter_per_center <- function(
+    intensities, metadata, 
+    quantitative_column_name, 
+    centers, 
+    center_column_name, 
+    min_number=2
+  ) {
   cat('Filtering by', center_column_name, ' - ', min_number, ' not-NA per ', center_column_name, '\n')
   cat('\tBefore filtering:', dim(intensities), "\n")
   

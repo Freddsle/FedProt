@@ -63,3 +63,80 @@ preprocess_data_mxout <- function(path, metadata, data_type, do_filter=TRUE){
         return(processed_data)
     }
 }
+
+
+#' Preprocess Spectronaut Data
+#' 
+#' This function reads a tab-separated file from a specified path and performs preprocessing on the data.
+#' 
+#' @param path The file path of the data to be preprocessed.
+#' @param name The name of the dataset to be processed.
+#' 
+#' 
+#' @return A data frame containing the preprocessed data with selected columns as specified in the metadata.
+#' 
+preprocess_spectronaut <- function(path, name, use_filter = TRUE){
+    report_data <- read.delim(
+        path,
+        header=TRUE,
+        sep="\t",
+        stringsAsFactors=FALSE)
+    
+    df_long <- report_data %>%
+        # pivot the columns that start with "X." which contain the quantity and count values
+        pivot_longer(
+            cols = starts_with("X."),
+            # names_pattern: 
+            #   X\\.[0-9]+\\.\\.(.+)\\.PG\\.(.+)
+            names_to = c("file", "measure"),
+            names_pattern = "X\\.[0-9]+\\.\\.(.+)\\.PG\\.(.+)",
+            values_to = "value"
+        ) %>%
+        # Now pivot wider to have separate columns for the two measures
+        pivot_wider(
+            names_from = measure,
+            values_from = value
+        ) %>%
+        # Create File.Name and Run (both get the same value extracted above)
+        mutate(File.Name = file,
+               Run = file)
+
+    # Rename columns for clarity: change the original protein group and gene columns,
+    # and rename the measures to the names you want.
+    if(name == "lab_E"){
+        df_long <- df_long %>%
+            rename(Protein.Group = PG.ProteinAccessions,
+                   Genes = PG.Genes,
+                   PG.Quantity = Quantity,
+                   PG.Count = NrOfStrippedSequencesUsedForQuantification)
+    } else {
+        df_long <- df_long %>%
+            rename(Protein.Group = PG.ProteinGroups,
+                Genes = PG.Genes,
+                PG.Quantity = Quantity,
+                PG.Count = RunEvidenceCount)
+    }
+    
+    # if column PG.Qvalue is present, filter the data based on it
+    if("PG.Qvalue" %in% colnames(df_long) && use_filter){
+        df_long <- df_long %>%
+            filter(PG.Qvalue <= 0.01)
+    }
+    df_long <- df_long %>%
+        # remove .raw from the file name and Run
+        mutate(File.Name = gsub("\\.raw", "", File.Name),
+               Run = gsub("\\.raw", "", Run)) %>%
+        # Finally, select the columns in the desired order.
+        select(File.Name, Run, Protein.Group, Genes, PG.Quantity, PG.Count)
+
+    # outlier samples based on name
+    filter_sample_out <- switch(name,
+        'lab_A' = c("Ref8537_QC1_20230414_2", 'Ref8537_QC2_20230414_2', 'Ref8537_QC3_20230414_2', 'Ref8537_QC4_20230414_2'),
+        NULL)
+        
+    # filter data if filter_sample_out is not NULL
+    if (!is.null(filter_sample_out)) {
+        df_long <- df_long[!df_long$File.Name %in% filter_sample_out, ]
+    }
+    return(df_long)
+}

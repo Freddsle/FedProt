@@ -33,7 +33,7 @@ def read_results(workdir,
     df["lfc_DEqMS"] = DEqMS["logFC"]
     df["AvgExpr_DEqMS"] = DEqMS["AveExpr"]
     logging.info(f"Results loaded for DEqMS with {DEqMS.shape[0]} proteins.")
-    logging.info(f"Head: \n {DEqMS.head(1)}")
+    # logging.info(f"Head: \n {DEqMS.head(1)}")
 
     # FedProt
     fedprot = pd.read_csv(workdir+fedprot_name, sep="\t", index_col=0)
@@ -41,7 +41,7 @@ def read_results(workdir,
     # df["pv_FedProt"] = fedprot["sca.P.Value"]
     df["lfc_FedProt"] = fedprot["logFC"]
     logging.info(f"Results loaded for FedProt with {fedprot.shape[0]} proteins.")
-    logging.info(f"Head: \n {fedprot.head(1)}")
+    # logging.info(f"Head: \n {fedprot.head(1)}")
 
     if only_two:
         if corrected_deqms_name:
@@ -67,7 +67,7 @@ def read_results(workdir,
                                     is_sorted=False, returnsorted=False)
     df["pv_Fisher"] = pd.Series(adj_pval,index=ma_cm["metap"].index)
     logging.info(f"Results loaded for Fisher with {ma_cm.shape[0]} proteins.")
-    logging.info(f"Head: \n {ma_cm.head(1)}")
+    # logging.info(f"Head: \n {ma_cm.head(1)}")
 
     # REM
     ma_rem = pd.read_csv(workdir+rem_name, sep="\t")
@@ -80,7 +80,7 @@ def read_results(workdir,
                                       is_sorted=False, returnsorted=False)
     df["pv_REM"] = pd.Series(adj_pval,index=ma_rem["randomP"].index)
     logging.info(f"Results loaded for REM with {ma_rem.shape[0]} proteins.")
-    logging.info(f"Head: \n {ma_rem.head(1)}")
+    # logging.info(f"Head: \n {ma_rem.head(1)}")
 
     ### Stoufer 
     if simulated:
@@ -91,7 +91,7 @@ def read_results(workdir,
     df["pv_Stouffer"] = stoufer["FDR"]
     df["lfc_Stouffer"] = df["lfc_Fisher"]  # take logFC from MetaVolcanoR
     logging.info(f"Results loaded for Stouffer with {stoufer.shape[0]} proteins.")
-    logging.info(f"Head: \n {stoufer.head(1)}")
+    # logging.info(f"Head: \n {stoufer.head(1)}")
 
     ### RankProd
     if simulated:
@@ -103,7 +103,7 @@ def read_results(workdir,
     df["pv_RankProd"] = rankprod["FDR"]
     df["lfc_RankProd"] = rankprod["avgL2FC"] 
     logging.info(f"Results loaded for RankProd with {rankprod.shape[0]} proteins.")
-    logging.info(f"Head: \n {rankprod.head(1)}")
+    # logging.info(f"Head: \n {rankprod.head(1)}")
 
     df = pd.DataFrame.from_dict(df)
     if drop_na:
@@ -305,7 +305,8 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                 show_legend=True,
                 set_lims=None,
                 titles=None,
-                adjust_structure=None):
+                adjust_structure=None,
+                bbox_to_anchor_param=(0.5, -0.05)):
     """
     Function to plot results based on different datasets and methods.
 
@@ -342,7 +343,7 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
     # --------------------------------------------------------------------------
     if what == "pv_":
         max_p_val = np.max(np.abs(dfs[used_datasets[0]]['pv_DEqMS']))
-        suptitle = "$-log_{10}(adj.p-val.)$" if max_p_val > 1.1 else "adj.p-val."
+        suptitle = "$-log_{10}$(adj.p-val.)" if max_p_val > 1.1 else "adj.p-val."
         logging.info(f"Plotting correlation using p-vals - {'log-transformed' if max_p_val > 1.1  else 'not log-transformed'}.")
     elif what == "lfc_":
         suptitle = "Log2FC"
@@ -369,7 +370,7 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
         
         # Y-label only on the leftmost column
         if col_idx == 0:
-            ax.set_ylabel(f'{suptitle} {comparsions[i] if i < len(comparsions) else ""}, other methods', fontsize=10)
+            ax.set_ylabel(f'{suptitle} {comparsions[i] if i < len(comparsions) else ""},\nFedProt and other meta-analysis methods', fontsize=10)
 
         mins = []
         maxs = []
@@ -435,7 +436,7 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
         fig.legend(
             handles, labels,
             loc='lower center',      # changed from 'upper center'
-            bbox_to_anchor=(0.5, -0.05),  # negative y shifts it below the figure
+            bbox_to_anchor=bbox_to_anchor_param,  # negative y shifts it below the figure
             title="\nMethods",
             fontsize="large",
             markerscale=5,
@@ -587,27 +588,31 @@ def plot_stats_for_topN(dfs,
                 stats[top_n_genes[j]] = confusion_matrix[metric]
             stats = pd.DataFrame.from_dict(stats)
             # print(stats.T)
-            stats.T.plot(ax=axes[i], cmap=cmap)
+            if len(datasets) > 1:
+                stats.T.plot(ax=axes[i], cmap=cmap)
+            else:
+                stats.T.plot(ax=axes, cmap=cmap)
             min_ylim[metric] = min(min_ylim.get(metric, 0), stats.values.min())
             max_ylim[metric] = max(max_ylim.get(metric, 0), stats.values.max())
 
+            where_put = axes[i] if len(datasets) > 1 else axes
             # axes[i].set_yscale('log')
             if k == len(metrics) - 1:
-                tmp = axes[i].set_xlabel("number of top-ranked proteins", fontsize=10)
+                tmp = where_put.set_xlabel("Number of top-ranked proteins", fontsize=10)
             if i == 0:
                 if metric == "Jaccard":
-                    tmp = axes[i].set_ylabel(f"{metric} similarity coefficient", fontsize=10)
+                    tmp = where_put.set_ylabel(f"{metric} similarity coefficient", fontsize=10)
                 else:
-                    tmp = axes[i].set_ylabel(f"{metric}", fontsize=14)
+                    tmp = where_put.set_ylabel(f"{metric}", fontsize=14)
                 if text:
                     tmp = axes[0].text(-0.15 * i_max, np.max(stats.values) * 1.0, text, fontsize=24)
             if i > 0 or k != len(metrics) - 1:
-                axes[i].get_legend().remove()
+                where_put.get_legend().remove()
             if k == 0:
                 if titles:
-                    tmp = axes[i].set_title(titles[i], fontsize=14)
+                    tmp = where_put.set_title(titles[i], fontsize=14)
                 else:
-                    tmp = axes[i].set_title(ds, fontsize=14)
+                    tmp = where_put.set_title(ds, fontsize=14)
             all_stats[metric][ds] = stats
 
     for k in range(len(metrics)):
@@ -636,7 +641,8 @@ def plot_stats_for_topN(dfs,
 def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
                         num_top_genes=range(5, 700, 5),
                         figfile="", figsize=(13, 4),
-                        titles=None):
+                        titles=None,
+                        where_legend = 0):
     fig, axes = plt.subplots(1, len(jaccard_dfs), figsize=figsize, sharey=sharey)
     datasets = list(jaccard_dfs.keys())
 
@@ -665,7 +671,7 @@ def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
         axes[i].set_yticks(np.arange(0, 1.1, 0.1))
         if i == 0:
             axes[i].set_ylabel("Jaccard similarity coefficient", fontsize=10)
-        if i == len(datasets) - 1:
+        if i == where_legend:
             axes[i].legend(title="Method")
 
     if figfile:
