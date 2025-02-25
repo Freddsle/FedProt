@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np 
+import seaborn as sns
 from statsmodels.stats.multitest import multipletests
 
 from scipy.stats import mannwhitneyu
@@ -193,22 +194,28 @@ def calculate_performance_metrics(
         TN = len(F.intersection(N))
         FN = len(T.intersection(N))
 
+        # Calculate precision, recall, and F1 score
         Prec = TP / (TP + FP) if (TP + FP) > 0 else 0
         Rec = TP / (TP + FN) if (TP + FN) > 0 else 0
-        F1 = 2 * (Prec * Rec) / (Prec + Rec) if Prec and Rec else 0
-        # MCC = (TP * TN - FP * FN) / np.sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
-        Jaccard_i = len(T.intersection(P)) / len(T.union(P)) if len(T.union(P)) > 0 else 0
+        F1 = 2 * (Prec * Rec) / (Prec + Rec) if (Prec + Rec) > 0 else 0
 
-        logging.info(f"Performance metrics calculated for {m} method.")
-        logging.info(f"TP number: {TP}, FP number: {FP}, TN number: {TN}, FN number: {FN}.")
-        logging.info(f"Number of genes total: {len(all_genes)}, DEqMS: {len(T)}, {m}: {len(P)}.")
+        # Update the Jaccard index calculation:
+        # If both T and P are empty, their union is empty. We treat this as a perfect match.
+        if len(T.union(P)) == 0:
+            Jaccard_i = 1  # perfect match when both are empty
+        else:
+            Jaccard_i = len(T.intersection(P)) / len(T.union(P))
+
+        # logging.info(f"Performance metrics calculated for {m} method.")
+        # logging.info(f"TP number: {TP}, FP number: {FP}, TN number: {TN}, FN number: {FN}.")
+        # logging.info(f"Number of genes total: {len(all_genes)}, DEqMS: {len(T)}, {m}: {len(P)}.")
 
         results[m] = {"Number": len(T), "TP": TP, "FP": FP, "TN": TN, "FN": FN, 
                       "Precision": Prec, "Recall": Rec, "F1": F1, 
                     #   "MCC": MCC, 
                       "Jaccard": Jaccard_i}
 
-    logging.info(f"Performance metrics calculated for {'all' if top_genes == -1 else top_genes} genes.")
+    # logging.info(f"Performance metrics calculated for {'all' if top_genes == -1 else top_genes} genes.")
     return results
 
 
@@ -760,6 +767,8 @@ def plot_exp_diffs(log_dfs, what="pv_", methods=["FedProt", "Fisher", "Stouffer"
     return p_values, mean_diffs
 
 
+import seaborn as sns
+
 def plot_ma_plots(log_dfs, what="lfc_", methods=["FedProt", "Fisher", "REM"], lfc_thr=0.5, adj_pval_thr=0.05, 
                   figsize=(15, 5), figfile=None):
     num_datasets = len(log_dfs)
@@ -793,4 +802,112 @@ def plot_ma_plots(log_dfs, what="lfc_", methods=["FedProt", "Fisher", "REM"], lf
     plt.tight_layout()
     if figfile:
         fig.savefig(figfile)
+    plt.show()
+
+
+def dep_frac_heatmap(df_to_plot, k, ax=None, 
+                     metric_label='Differentially Abundant Proteins (%)',
+                     vmin=None, vmax=None, cbar=True, jac_float=True,
+                     show_ylabel=True):
+    """
+    Updated so you can optionally supply vmin/vmax for a shared color scale,
+    and control whether to draw a colorbar or not.
+    """
+    show_fig = False
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        show_fig = True
+
+    cbar_options = {'label': metric_label}
+
+    sns.heatmap(
+        df_to_plot,
+        annot=True,
+        annot_kws={"size": 7},
+        fmt=".2f" if jac_float else ".0f",
+        cmap="viridis",
+        cbar=cbar,
+        cbar_kws=cbar_options if cbar else None,
+        linewidths=0.001,
+        linecolor='white',
+        ax=ax,
+        vmin=vmin,
+        vmax=vmax
+    )
+
+    ax.set_xlabel("adj. p-value cutoff", labelpad=10, fontsize=9)
+    if show_ylabel:
+        ax.set_ylabel("logFC cutoff", labelpad=10, fontsize=9)
+    # Make this a smaller "subplot title"
+    ax.set_title(k, pad=10, fontsize=12)
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=9)
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
+
+    # If we created a standalone figure, show it.
+    if show_fig:
+        plt.tight_layout()
+        plt.show()
+
+
+def plot_metric_grid(metric_data, dataset_key, metric_name,
+                     methods=["FedProt", "Fisher", "Stouffer", "REM", "RankProd"],
+                     nrows=3, ncols=2, figsize=(12, 15),
+                     global_max_value=None,
+                     path_to_save=None):
+    """
+    Creates a grid of heatmaps (2 cols x 3 rows).
+    Only one color bar is shown, on the second row's left subplot.
+    All subplots share the same [vmin, vmax].
+    """
+    # 1. Collect min/max across all methods for consistent color scale
+    all_vals = []
+    for method in methods:
+        df = metric_data[dataset_key][method].astype(float)
+        all_vals.append(df.values.flatten())
+    all_vals = np.concatenate(all_vals)
+    global_min, global_max = all_vals.min(), all_vals.max()
+
+    if global_max_value:
+        global_max = global_max_value
+
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize)
+    axs = axs.flatten()
+
+    # 2. Add a large figure title
+    fig.suptitle(f"{metric_name} for {dataset_key}", fontsize=16, y=1.02)
+
+    # 3. Draw each subplot, turning off cbar except for the second row left subplot (axs[2])
+    for i, method in enumerate(methods):
+        df_to_plot = metric_data[dataset_key][method].astype(float)
+        
+        # Decide where to display the colorbar
+        show_cbar = True if i == 4 else False
+        show_ylabel = True if i == 0 else False
+        if 'jaccard' in metric_name.lower() and dataset_key == "Bacterial dataset":
+            vmin_ = 0.9
+        elif 'jaccard' in metric_name.lower() and dataset_key == "Human serum dataset":
+            vmin_ = 0.7
+        else:
+            vmin_ = global_min
+
+        dep_frac_heatmap(
+            df_to_plot,
+            k=f"{method}",
+            ax=axs[i],
+            metric_label=metric_name,
+            vmin=vmin_,
+            vmax=global_max,
+            cbar=show_cbar,
+            jac_float=True if metric_name == "Jaccard Index" else False,
+            show_ylabel=show_ylabel
+        )
+
+    # 4. Hide any unused subplots
+    for j in range(len(methods), len(axs)):
+        fig.delaxes(axs[j])
+
+    plt.tight_layout()
+    if path_to_save:
+        fig.savefig(path_to_save, bbox_inches='tight')
+        return
     plt.show()

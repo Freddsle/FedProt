@@ -1,0 +1,28 @@
+fedprot:
+  counts: protein_counts.tsv
+  design: design.tsv
+  intensities: protein_groups_matrix.tsv
+  sep: '\t'
+  
+  name_cohort: "lab_D"
+  TEST_MODE: false
+
+  # use_smpc: false
+  use_smpc: true
+  
+  max_na_rate: 0.8
+  log_transformed: false
+
+  experiment_type: 'DIA'
+  remove_single_pep_protein: false
+  use_counts: true
+  remove_single_value_design: false
+  
+  only_shared_proteins: false
+
+    # label: "Condition"
+  target_classes: ["Glu", "Pyr"]
+  covariates: []
+
+  result_table: "DPE.csv"
+  

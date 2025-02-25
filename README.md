@@ -148,7 +148,7 @@ This configuration file is used to configure a federated proteomics analysis pip
 
 ## Prerequisite
 
-To run FedProt app, Docker and FeatureCloud pip package should be installed:
+To run FedProt app, Python, Docker and FeatureCloud pip package should be installed:
 
 ```shell
 pip install featurecloud
@@ -170,6 +170,9 @@ featurecloud app download featurecloud.ai/fedprot
 # OR build
 featurecloud app build featurecloud.ai/fedprot
 ```
+
+FedProt was tested on Ubuntu, Mac and Windows. For optimal performance, a machine with at least 4 GB of RAM. 
+
 ## Test data
 
 You can find example test data in:

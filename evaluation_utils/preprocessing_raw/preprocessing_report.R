@@ -114,7 +114,9 @@ preprocess_spectronaut <- function(path, name, use_filter = TRUE){
             rename(Protein.Group = PG.ProteinGroups,
                 Genes = PG.Genes,
                 PG.Quantity = Quantity,
-                PG.Count = RunEvidenceCount)
+                PG.Count = NrOfStrippedSequencesUsedForQuantification
+                # PG.Count = RunEvidenceCount
+                )
     }
     
     # if column PG.Qvalue is present, filter the data based on it

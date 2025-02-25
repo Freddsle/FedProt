@@ -95,18 +95,18 @@ plotIntensityDensityByPool <- function(
 }
 
 
-heatmap_plot <- function(pg_matrix, batch_info, name, condition="condition", lab="lab"){
+heatmap_plot <- function(pg_matrix, batch_info, name, condition = "condition", lab = "lab") {
     cor_matrix <- cor(na.omit(pg_matrix), use = "pairwise.complete.obs")
     resulting_plot <- ggpubr::as_ggplot(grid::grid.grabExpr(
         pheatmap::pheatmap(cor_matrix, 
-                        annotation_col = batch_info %>% dplyr::select(.data[[condition]], .data[[lab]]),
-                        treeheight_row = 0, treeheight_col = 0, 
-                        main = paste0(name, ' heatmap')
+                           annotation_col = batch_info %>% dplyr::select(all_of(condition), all_of(lab)),
+                           treeheight_row = 0, treeheight_col = 0, 
+                           main = paste0(name, ' heatmap')
         )
-      )
-    )
+    ))
     return(resulting_plot)
 }
+
 
 
 heatmap_nocor_plot <- function(pg_matrix, batch_info, name, condition="condition", lab="lab", use_breaks=TRUE){
