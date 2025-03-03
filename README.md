@@ -156,7 +156,7 @@ pip install featurecloud
 
 Start controller. 
 ```shell
-# first, create and go the the dir, where test folder will be created
+# first, create and go to the dir, where test folder will be created
 cd path/to/dir/with/test
 featurecloud controller start --data-dir=PATH/TO/DATA/data/bacterial_data/balanced
 ```
