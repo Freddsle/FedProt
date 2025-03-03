@@ -25,12 +25,14 @@ Available normalization methods:
   - [Configuration File Description](#configuration-file-description)
 - [Running the app](#running-the-app)
   - [Prerequisite](#prerequisite)
+  - [Download (or build locally) the app:](#download-or-build-locally-the-app)
   - [Test data](#test-data)
   - [Run](#run)
   - [Output](#output)
 - [FedProt states](#fedprot-states)
 - [Evaluation](#evaluation)
   - [Run the evaluation:](#run-the-evaluation)
+- [Logging and Troubleshooting](#logging-and-troubleshooting)
 - [Repo structure:](#repo-structure)
 - [Citation:](#citation)
   - [Preprint:](#preprint)
@@ -148,28 +150,41 @@ This configuration file is used to configure a federated proteomics analysis pip
 
 ## Prerequisite
 
-To run FedProt app, Python, Docker and FeatureCloud pip package should be installed:
+To run FedProt, users must have Python, Docker, and the FeatureCloud pip package installed.
 
-```shell
-pip install featurecloud
-```
+First - Ensure that [Docker](https://docker.com/) are installed on your system.
 
-Start controller. 
-```shell
-# first, create and go to the dir, where test folder will be created
-cd path/to/dir/with/test
-featurecloud controller start --data-dir=PATH/TO/DATA/data/bacterial_data/balanced
-```
+Second - Install the FeatureCloud package and start the controller. This can be done using a script (see Getting Started -> 2. Install FeatureCloud Controller, https://featurecloud.ai/researchers).
 
-Download (or build locally) the app:
+Or, you can install the FeatureCloud package and start the controller manually:
 
-```shell
-# download
-featurecloud app download featurecloud.ai/fedprot
+- Install the FeatureCloud package:  
+  ```shell
+  pip install featurecloud
+  ```
 
-# OR build
-featurecloud app build featurecloud.ai/fedprot
-```
+- Start controller. 
+  ```shell
+  # first, create and go to the dir, where test folder will be created
+  cd path/to/dir/with/test
+
+  featurecloud controller start --data-dir=PATH/TO/DATA/data/bacterial_data/balanced
+  ```
+  The controller is responsible for launching Docker internally. Users only need to start the controller; there is no need to manually run any Docker commands.
+
+## Download (or build locally) the app:
+
+If the controller is running, you can add the app to you project (https://featurecloud.ai/projects) and app image will be downloaded automatically.
+
+Or, if you want to test the app using FeatureCloud test-bed, you can download the app using the FeatureCloud CLI:
+
+  ```shell
+  # download
+  featurecloud app download featurecloud.ai/fedprot
+
+  # OR build
+  featurecloud app build featurecloud.ai/fedprot
+  ```
 
 FedProt was tested on Ubuntu, Mac and Windows. For optimal performance, a machine with at least 4 GB of RAM. 
 
@@ -245,6 +260,20 @@ Be aware that this version does not have SMPC and runs locally, only as an intro
 The examples and evaluation is in `evaluation` folder. Evaluation was done using 5 datasets, two real-world: bacterial DIA-LFQ and human plasma DDA-TMT, and 3 simulated.
 
 The FedProt app and evaluation have beedn tested on platform: x86_64-conda-linux-gnu (64-bit) running under: Ubuntu 22.04.4 LTS.
+
+# Logging and Troubleshooting
+
+FedProt provides comprehensive logging to help users review processing steps and troubleshoot any issues that may arise.
+
+- **Command Line Interface (CLI):**  
+  Log files are automatically generated and stored in the `log` folder located in the same directory where the controller is initiated.
+
+- **Graphical User Interface (GUI):**  
+  For users operating through the GUI, a “Logs” button is available to easily download the current log file.
+
+- **FeatureCloud Test Environment:**  
+  If FedProt is deployed within the FeatureCloud test environment, users can view the log files directly within the testing section, allowing for immediate access to processing details.
+
 
 # Repo structure:
 
