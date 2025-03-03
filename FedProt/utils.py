@@ -180,6 +180,10 @@ def compute_beta_and_stdev(XtX_glob, XtY_glob, n, k, mask_glob):
         mask = mask_glob[i, :]
         submatrix = XtX_glob[i, :, :][np.ix_(~mask, ~mask)]
 
+        # if submatrix is singular, print i, mask and XtX_glob[i, :, :]
+        if np.linalg.matrix_rank(submatrix) < submatrix.shape[0]:
+            logging.warning(f"XtX matrix is singular for probe {i}.")
+
         invXtX = linalg.inv(submatrix)
         beta[i, ~mask] = invXtX @ XtY_glob[i, ~mask]
  

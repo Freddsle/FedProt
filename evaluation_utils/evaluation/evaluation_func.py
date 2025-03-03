@@ -557,7 +557,8 @@ def plot_stats_for_topN(dfs,
                         text="",
                         figfile="", suptitle="", sharey=False,
                         figsize = (13, 4),
-                        titles=None):
+                        titles=None,
+                        where_legend="lower right"):
 
     """Calculated and plots statisctics for top N genes ordered by p-value.
     Top genes are chosen based on a sliding threshold, starting from 'min_n_genes' and moving to 'max_n_genes' with 'step'."""
@@ -615,6 +616,9 @@ def plot_stats_for_topN(dfs,
                     tmp = axes[0].text(-0.15 * i_max, np.max(stats.values) * 1.0, text, fontsize=24)
             if i > 0 or k != len(metrics) - 1:
                 where_put.get_legend().remove()
+            else:
+                if where_legend:
+                    where_put.legend(title="Method", loc=where_legend)
             if k == 0:
                 if titles:
                     tmp = where_put.set_title(titles[i], fontsize=14)
