@@ -12,7 +12,8 @@ pca_plot <- function(
     quantitative_col_name = "Quantitative.column.name", 
     col_col = "Group", 
     shape_col = "",
-    show_legend = TRUE
+    show_legend = TRUE,
+    size_point=3
     ){
   pca <- prcomp(t(na.omit(df)))
   pca_df <- pca$x %>%
@@ -31,7 +32,7 @@ pca_plot <- function(
   }
 
   pca_plot <- pca_plot + 
-    geom_point(size=3) +
+    geom_point(size=size_point) +
     theme_classic() +
     labs(title = title,
          x = glue::glue("PC1 [{round(var_expl['PC1']*100, 2)}%]"),
