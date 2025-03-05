@@ -150,11 +150,13 @@ This configuration file is used to configure a federated proteomics analysis pip
 
 ## Prerequisite
 
-To run FedProt, users must have Python, Docker, and the FeatureCloud pip package installed.
+To run FedProt, users must have internet access, Python, Docker, and the FeatureCloud pip package installed.
 
-First - Ensure that [Docker](https://docker.com/) are installed on your system.
+First, ensure that Docker is installed on your machine. If not, you can download it from the official [Docker](https://docker.com/) website.
 
-Second - Install the FeatureCloud package and start the controller. This can be done using a script (see Getting Started -> 2. Install FeatureCloud Controller, https://featurecloud.ai/researchers).
+Second, istall the FeatureCloud package and start the controller. Two options are available, via a script or manually.
+
+If you prefer script installation, you can install and run the controller using the FeatureCloud script, see [Getting Started --> 2. Install FeatureCloud Controller](https://featurecloud.ai/researchers).
 
 Or, you can install the FeatureCloud package and start the controller manually:
 
@@ -171,6 +173,8 @@ Or, you can install the FeatureCloud package and start the controller manually:
   featurecloud controller start --data-dir=PATH/TO/DATA/data/bacterial_data/balanced
   ```
   The controller is responsible for launching Docker internally. Users only need to start the controller; there is no need to manually run any Docker commands.
+
+  For optimal performance, using machines with at least 4 GB of RAM is recommended.
 
 ## Download (or build locally) the app:
 
