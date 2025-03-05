@@ -172,9 +172,10 @@ Or, you can install the FeatureCloud package and start the controller manually:
 
   featurecloud controller start --data-dir=PATH/TO/DATA/data/bacterial_data/balanced
   ```
-  The controller is responsible for launching Docker internally. Users only need to start the controller; there is no need to manually run any Docker commands.
+  
+The controller is responsible for launching Docker internally. Users only need to start the controller; there is no need to manually run any Docker commands.
 
-  For optimal performance, using machines with at least 4 GB of RAM is recommended.
+For optimal performance, using machines with at least 4 GB of RAM is recommended.
 
 ## Download (or build locally) the app:
 
