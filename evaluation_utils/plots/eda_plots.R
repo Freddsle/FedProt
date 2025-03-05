@@ -52,12 +52,24 @@ pca_plot <- function(
 }
 
 # boxplot
-boxplot_pg <- function(protein_matrix, metadata_df, quantitativeColumnName, color_col, title, path="") {
+boxplot_pg <- function(
+  protein_matrix, metadata_df, 
+  quantitativeColumnName, 
+  color_col, title, 
+  rename_samples = FALSE,
+  path="") {
+
+  if(rename_samples){
+    colnames(protein_matrix) <- sprintf("S_%03d", 1:ncol(protein_matrix))
+    metadata_df[[quantitativeColumnName]] <- sprintf("S_%03d", 1:nrow(metadata_df))
+  }
+
   # Reshape data into long format
   long_data <- tidyr::gather(protein_matrix, 
                              key = "file", value = "Intensity")
   merged_data <- merge(long_data, metadata_df, by.x = "file", by.y = quantitativeColumnName)
-  
+  merged_data <- merged_data %>% na.omit()
+
   # Log tranformed scale
   boxplot <- ggplot(merged_data, aes(x = file, y = Intensity, fill = .data[[color_col]])) + 
     geom_boxplot() +
@@ -65,8 +77,8 @@ boxplot_pg <- function(protein_matrix, metadata_df, quantitativeColumnName, colo
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
     # adjust fonsize for the x-axis
-    theme(axis.text.x = element_text(size = 8)) +
-    labs(title = title) 
+    theme(axis.text.x = element_text(size = 6)) +
+    labs(title = title, x = "Sample id")
 
   if(path == "") {
     return(boxplot)
@@ -82,15 +94,19 @@ plotIntensityDensityByPool <- function(
   # Reshape the intensities_df from wide to long format
   long_intensities <- reshape2::melt(intensities_df, 
     variable.name = "Sample", value.name = "Intensity")
-  
+    
   # Adjust the merge function based on your metadata column names
-  merged_data <- merge(long_intensities, metadata_df, by.x = "Sample", by.y = quantitativeColumnName)
+  merged_data <- merge(
+    long_intensities, metadata_df,
+    by.x = "Sample",
+    by.y = quantitativeColumnName
+  )
   
   # Plot the data
   ggplot(merged_data, aes(x = Intensity, color = .data[[poolColumnName]])) +  
     geom_density() +
     theme_minimal() +
-    labs(title = paste(title, " by", poolColumnName),
+    labs(title = paste0(title, " by ", poolColumnName),
          x = "Intensity",
          y = "Density")
 }
