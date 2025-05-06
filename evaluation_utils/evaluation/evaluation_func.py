@@ -313,7 +313,8 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                 set_lims=None,
                 titles=None,
                 adjust_structure=None,
-                bbox_to_anchor_param=(0.5, -0.05)):
+                bbox_to_anchor_param=(0.5, -0.05),
+                fontsize_big=9, fontsize_small=7):
     """
     Function to plot results based on different datasets and methods.
 
@@ -368,16 +369,16 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
 
         # Set subplot title
         if titles is not None and i < len(titles):
-            ax.set_title(titles[i], fontsize=14)
+            ax.set_title(titles[i], fontsize=fontsize_big)
         else:
-            ax.set_title(dataset, fontsize=14)
+            ax.set_title(dataset, fontsize=fontsize_big)
 
         # X-label
-        ax.set_xlabel(f'{suptitle} {comparsions[i] if i < len(comparsions) else ""}, DEqMS', fontsize=10)
+        ax.set_xlabel(f'{suptitle} {comparsions[i] if i < len(comparsions) else ""}, DEqMS', fontsize=fontsize_small)
         
         # Y-label only on the leftmost column
         if col_idx == 0:
-            ax.set_ylabel(f'{suptitle} {comparsions[i] if i < len(comparsions) else ""},\nFedProt and other meta-analysis methods', fontsize=10)
+            ax.set_ylabel(f'{suptitle} {comparsions[i] if i < len(comparsions) else ""},\nFedProt and other MA methods', fontsize=fontsize_small)
 
         mins = []
         maxs = []
@@ -418,6 +419,9 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
                 ax.set_xlim(set_lims[i][0], set_lims[i][1])
                 ax.set_ylim(set_lims[i][0], set_lims[i][1])
                 x_min, x_max = set_lims[i][0], set_lims[i][1]
+        
+        # fix x and y ticks fontsizes to fontsize_small
+        ax.tick_params(axis='both', which='major', labelsize=fontsize_small)
 
         # ----------------------------------------------------------------------
         # 6) Display table if requested
@@ -445,10 +449,10 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
             loc='lower center',      # changed from 'upper center'
             bbox_to_anchor=bbox_to_anchor_param,  # negative y shifts it below the figure
             title="\nMethods",
-            fontsize="large",
+            fontsize=fontsize_big,
             markerscale=5,
             frameon=False,
-            title_fontsize="large",
+            title_fontsize=fontsize_big,
             ncol=len(methods)
         )
 
@@ -456,7 +460,7 @@ def plt_results(dfs, methods=["FedProt","Fisher","Stouffer","REM","RankProd"],
     # 9) Text below figure if desired
     # --------------------------------------------------------------------------
     if text:
-        plt.figtext(0.5, 0.01, text, ha="center", fontsize=12)
+        plt.figtext(0.5, 0.01, text, ha="center", fontsize=fontsize_big)
 
     # === CHANGE 2: give enough space at the bottom for the legend ===
     plt.subplots_adjust(bottom=0.2)
@@ -558,7 +562,8 @@ def plot_stats_for_topN(dfs,
                         figfile="", suptitle="", sharey=False,
                         figsize = (13, 4),
                         titles=None,
-                        where_legend="lower right"):
+                        where_legend="lower right",
+                        fontsize_big=9, fontsize_small=7):
 
     """Calculated and plots statisctics for top N genes ordered by p-value.
     Top genes are chosen based on a sliding threshold, starting from 'min_n_genes' and moving to 'max_n_genes' with 'step'."""
@@ -606,14 +611,14 @@ def plot_stats_for_topN(dfs,
             where_put = axes[i] if len(datasets) > 1 else axes
             # axes[i].set_yscale('log')
             if k == len(metrics) - 1:
-                tmp = where_put.set_xlabel("Number of top-ranked proteins", fontsize=10)
+                tmp = where_put.set_xlabel("Number of top-ranked proteins", fontsize=fontsize_small)
             if i == 0:
                 if metric == "Jaccard":
-                    tmp = where_put.set_ylabel(f"{metric} similarity coefficient", fontsize=10)
+                    tmp = where_put.set_ylabel(f"{metric} similarity coefficient", fontsize=fontsize_small)
                 else:
-                    tmp = where_put.set_ylabel(f"{metric}", fontsize=14)
+                    tmp = where_put.set_ylabel(f"{metric}", fontsize=fontsize_big)
                 if text:
-                    tmp = axes[0].text(-0.15 * i_max, np.max(stats.values) * 1.0, text, fontsize=24)
+                    tmp = axes[0].text(-0.15 * i_max, np.max(stats.values) * 1.0, text, fontsize=fontsize_big)
             if i > 0 or k != len(metrics) - 1:
                 where_put.get_legend().remove()
             else:
@@ -621,9 +626,9 @@ def plot_stats_for_topN(dfs,
                     where_put.legend(title="Method", loc=where_legend)
             if k == 0:
                 if titles:
-                    tmp = where_put.set_title(titles[i], fontsize=14)
+                    tmp = where_put.set_title(titles[i], fontsize=fontsize_big)
                 else:
-                    tmp = where_put.set_title(ds, fontsize=14)
+                    tmp = where_put.set_title(ds, fontsize=fontsize_big)
             all_stats[metric][ds] = stats
 
     for k in range(len(metrics)):
@@ -639,9 +644,9 @@ def plot_stats_for_topN(dfs,
             ax.set_yticks(np.arange(0, 1.1, 0.1))
 
     if suptitle:
-        fig.suptitle(suptitle, fontsize=14)
+        fig.suptitle(suptitle, fontsize=fontsize_big)
     if figfile:
-        fig.savefig(figfile)
+        fig.savefig(figfile, dpi=600, bbox_inches='tight')
 
     plt.tight_layout()
     plt.show()
@@ -653,7 +658,8 @@ def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
                         num_top_genes=range(5, 700, 5),
                         figfile="", figsize=(13, 4),
                         titles=None,
-                        where_legend = 0):
+                        where_legend = 0,
+                        fontsize_big=9, fontsize_small=7):
     fig, axes = plt.subplots(1, len(jaccard_dfs), figsize=figsize, sharey=sharey)
     datasets = list(jaccard_dfs.keys())
 
@@ -677,18 +683,20 @@ def plot_with_confidence(jaccard_dfs, methods, color_dict, sharey=True,
             axes[i].plot(num_top_genes, mean_scores, label=method, color=color_dict["Methods"][method])
             axes[i].fill_between(num_top_genes, mean_scores - std_deviation, mean_scores + std_deviation, color=color_dict["Methods"][method], alpha=0.1)
         
-        axes[i].set_title(f"Simulated {titles[i].lower()}", fontsize=14)
-        axes[i].set_xlabel("Number of top-ranked proteins", fontsize=10)
+        axes[i].set_title(f"Simulated {titles[i].lower()}", fontsize=fontsize_big)
+        axes[i].set_xlabel("Number of top-ranked proteins", fontsize=fontsize_small)
         axes[i].set_yticks(np.arange(0, 1.1, 0.1))
         if i == 0:
-            axes[i].set_ylabel("Jaccard similarity coefficient", fontsize=10)
+            axes[i].set_ylabel("Jaccard similarity coefficient", fontsize=fontsize_small)
         if i == where_legend:
             axes[i].legend(title="Method")
 
     if figfile:
-        fig.savefig(figfile)
+        fig.savefig(figfile, dpi=600, bbox_inches='tight')
     plt.tight_layout()
     plt.show()
+
+    return fig
 
 
 
