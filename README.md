@@ -290,16 +290,16 @@ Code for the simulated data analysis and evaluation are in `evaluation/simulated
 
 # Citation:
 
-## Preprint:
+Burankova, Yuliya, Miriam Abele, Mohammad Bakhtiari, Christine von Toerne, Teresa K. Barth, Lisa Schweizer, Pieter Giesbertz et al. "Privacy-preserving multicenter differential protein abundance analysis with FedProt." Nature Computational Science (2025): 1-14.
+
 ### BibTeX
 ```
-@misc{burankova2024privacypreservingmulticenterdifferentialprotein,
-      title={Privacy-Preserving Multi-Center Differential Protein Abundance Analysis with FedProt}, 
-      author={Yuliya Burankova and Miriam Abele and Mohammad Bakhtiari and Christine von Törne and Teresa Barth and Lisa Schweizer and Pieter Giesbertz and Johannes R. Schmidt and Stefan Kalkhof and Janina Müller-Deile and Peter A van Veelen and Yassene Mohammed and Elke Hammer and Lis Arend and Klaudia Adamowicz and Tanja Laske and Anne Hartebrodt and Tobias Frisch and Chen Meng and Julian Matschinske and Julian Späth and Richard Röttger and Veit Schwämmle and Stefanie M. Hauck and Stefan Lichtenthaler and Axel Imhof and Matthias Mann and Christina Ludwig and Bernhard Kuster and Jan Baumbach and Olga Zolotareva},
-      year={2024},
-      eprint={2407.15220},
-      archivePrefix={arXiv},
-      primaryClass={q-bio.QM},
-      url={https://arxiv.org/abs/2407.15220}, 
+@article{burankova2025privacy,
+  title={Privacy-preserving multicenter differential protein abundance analysis with FedProt},
+  author={Burankova, Yuliya and Abele, Miriam and Bakhtiari, Mohammad and von Toerne, Christine and Barth, Teresa K and Schweizer, Lisa and Giesbertz, Pieter and Schmidt, Johannes R and Kalkhof, Stefan and M{\"u}ller-Deile, Janina and others},
+  journal={Nature Computational Science},
+  pages={1--14},
+  year={2025},
+  publisher={Nature Publishing Group US New York}
 }
 ```
